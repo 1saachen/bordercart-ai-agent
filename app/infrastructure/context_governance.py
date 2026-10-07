@@ -10,7 +10,6 @@ import time
 from agentscope.agent import Agent
 from agentscope.message import ToolResultBlock, ToolCallBlock, TextBlock, UserMsg
 from agentscope.middleware import MiddlewareBase
-from opentelemetry import trace
 from app.infrastructure.context import ShoppingContext
 from app.infrastructure.context_products import business_view, token_estimate, result_identity
 from app.infrastructure.context_state import next_state_message, project_state_messages, snapshot_message, STATE_NAMES
@@ -643,7 +642,6 @@ class LayeredContextMiddleware(MiddlewareBase):
             state['last_compaction'] = report
             if changed or archived:
                 state['checkpoint_id'] = hashlib.sha256(json.dumps(report,sort_keys=True).encode()+str(time.time_ns()).encode()).hexdigest()
-            trace.get_current_span().set_attributes({'globex.context.'+k:v for k,v in report.items() if isinstance(v,(str,int,float,bool))})
             return report
         except BaseException as error:
             agent.state = old_state

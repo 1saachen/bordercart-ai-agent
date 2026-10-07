@@ -32,7 +32,6 @@ from app.application.agents.product_candidate_projection import ProductCandidate
 _TOOL_LABELS = {
     "product_search_tool": "检索商品",
     "category_insight_tool": "查询选购知识",
-    "web_search_tool": "核实外部资料",
     "task_dispatch": "协调专家任务",
     "remember_preference_tool": "保存购物偏好",
     "forget_preference_tool": "删除购物偏好",

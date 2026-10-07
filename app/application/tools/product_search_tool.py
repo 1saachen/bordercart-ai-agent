@@ -72,7 +72,7 @@ def build_product_search_tool(usecase: CatalogSearchUseCase, bus: TradeEventBus,
         product_id: str | None = None,
         sku_id: str | None = None,
     ) -> ToolChunk:
-        """检索跨境商品库（embedding+rerank 二阶段召回），返回 Top-K 商品卡 JSON。
+        """检索跨境商品库（Embedding + Qdrant 召回），返回 Top-K 商品卡 JSON。
         传入 ship_to 时商品卡自动内联 landed_price 到手价明细（小计+运费+关税，统一折算 target_currency），
         无需另行计算单件价格。已知商品或规格时直接传 product_id / sku_id，优先精确查询；
         两者同时传入时必须属于同一商品，未找到不能用相似商品替换。报价按一件计算。
@@ -179,7 +179,7 @@ def build_product_search_tool(usecase: CatalogSearchUseCase, bus: TradeEventBus,
                 "hit_count": len(result["hits"]),
                 "recall_strategy": result["recall_strategy"],
                 "total_candidates": result["total_candidates"],
-                "rerank_applied": result["rerank_applied"],
+                "rerank_applied": False,
                 # 商品卡随事件下发，前端无需再调接口即可渲染（含 landed_price 到手价）
                 "hits": result["hits"],
                 **({"result_ref": result["result_ref"]} if "result_ref" in result else {}),

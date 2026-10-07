@@ -52,7 +52,7 @@ from app.infrastructure.resilience import (
     ToolResilienceMiddleware,
 )
 from app.infrastructure.settings import Settings
-from app.infrastructure.tracing import build_agent_middlewares
+from app.infrastructure.agent_middlewares import build_agent_middlewares
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +79,6 @@ class MainAgentFactory:
         self._circuit_registry = circuit_registry
         self._throttle = throttle
         self.buyer_skill_store = buyer_skill_store
-        self.skill_catalog_mode = "append_only"
         self.shopping_form_store = shopping_form_store
         # 与 orchestrator 共用同一个 selector，保证主/子 Agent 的偏好选取口径一致
         self._preference_selector = preference_selector or PreferenceSelector()
@@ -179,7 +178,7 @@ class SessionRegistry:
     """按 shopping_session_id 缓存 MainAgent 实例，支撑多轮对话；
     AgentState 经 SessionStore 端口落盘（SQLite 或文件），服务重启后恢复。"""
 
-    def __init__(self, main_factory: MainAgentFactory, session_store: SessionStore, *, enforce_owner: bool = True, prompt_registry=None) -> None:
+    def __init__(self, main_factory: MainAgentFactory, session_store: SessionStore, *, enforce_owner: bool = True) -> None:
         self._main_factory = main_factory
         self._session_store = session_store
         self._agents: dict[str, Agent] = {}
@@ -195,8 +194,6 @@ class SessionRegistry:
         try:
             claim = await self._session_store.claim(shopping_session_id, buyer_id=context.buyer_id, enforce_owner=self._enforce_owner)
             ShoppingContext.set_session_fence(claim.fence)
-            mode = getattr(self._main_factory, "skill_catalog_mode", "legacy")
-            ShoppingContext.set_skill_catalog_mode(mode)
             # 在恢复 AgentState 之前校验资料版本；变更后阻断旧正文继续参与模型上下文。
             previous = self._claims.get(shopping_session_id)
             if shopping_session_id not in self._agents or previous is None or previous.revision != claim.revision:

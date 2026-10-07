@@ -32,7 +32,6 @@ logger = logging.getLogger(__name__)
 DEFAULT_TIMEOUTS: dict[str, float] = {
     "product_search_tool": 15.0,
     "category_insight_tool": 15.0,
-    "web_search_tool": 20.0,
     "create_order_tool": 10.0,
     "query_order_tool": 10.0,
     "cancel_order_tool": 10.0,

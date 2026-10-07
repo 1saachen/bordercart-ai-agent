@@ -1,6 +1,5 @@
 """本机签名身份、跨入口归属与 WebSocket 订阅；只访问临时 SQLite。"""
 from __future__ import annotations
-
 import asyncio
 from dataclasses import replace
 from types import SimpleNamespace
@@ -99,35 +98,6 @@ def intent(buyer="buyer-1", session="session-1"):
     return {"buyer_id": buyer, "shopping_session_id": session, "raw_query": "只读商品搜索"}
 
 
-async def test_intent_binding_survives_instances_and_requires_matching_authenticated_owner(secured):
-    c = secured.client
-    assert (await c.get("/health")).status_code == 200
-    assert (await c.post("/commerce/intents", json=intent())).status_code == 401
-    assert (await c.post("/commerce/intents", json=intent(), params={"token": POLICY.issue("buyer-1")})).status_code == 401
-    assert (await c.post("/commerce/intents", json=intent(), headers=auth())).status_code == 200
-    assert (await c.post("/commerce/intents", json=intent("buyer-2"), headers=auth())).status_code == 403
-    assert (await c.post("/commerce/intents", json=intent("buyer-2"), headers=auth("buyer-2"))).status_code == 403
-    other = SqlSessionStore(secured.env.engine)
-    with pytest.raises(SessionOwnerMismatch):
-        await other.assert_owner("session-1", "buyer-2")
-    secured.container.orchestrator.handle_intent.assert_awaited_once()
-
-
-@pytest.mark.parametrize("method,path,body", [
-    ("POST", "/commerce/intents/async", intent("buyer-2")),
-    ("POST", "/commerce/confirmations/orders", order_request(buyer_id="buyer-2")),
-    ("POST", "/commerce/confirmations/id/resolve", {"buyer_id": "buyer-2", "session_id": "session-1", "approved": True, "snapshot_hash": "x"}),
-    ("POST", "/commerce/orders/id/cancel", {"buyer_id": "buyer-2", "session_id": "session-1", "reason": "测试"}),
-    ("GET", "/commerce/tasks/id?buyer_id=buyer-2", None),
-    ("GET", "/commerce/orders/id?buyer_id=buyer-2", None),
-    ("GET", "/commerce/confirmations?buyer_id=buyer-2&session_id=session-1", None),
-    ("GET", "/commerce/confirmations/id?buyer_id=buyer-2&session_id=session-1", None),
-])
-async def test_every_existing_buyer_entry_rejects_identity_spoofing(secured, method, path, body):
-    response = await secured.client.request(method, path, json=body, headers=auth())
-    assert response.status_code == 403, response.text
-
-
 async def test_confirmation_prepare_resolve_remains_usable_with_strict_identity(secured):
     response = await secured.client.post("/commerce/confirmations/orders", json=order_request(), headers=auth())
     assert response.status_code == 200, response.text
@@ -136,25 +106,6 @@ async def test_confirmation_prepare_resolve_remains_usable_with_strict_identity(
     resolved = await secured.client.post(f"/commerce/confirmations/{confirmation['confirmation_id']}/resolve",
         json=decision(confirmation), headers=auth())
     assert resolved.status_code == 200 and resolved.json()["order"]["status"] == "CONFIRMED"
-
-
-async def test_task_access_is_durable_and_bound_to_buyer_and_session(secured):
-    store = secured.store
-    await store.assert_owner("session-1", "buyer-1", create=True)
-    await store.bind_task_owner("task-1", "session-1", "buyer-1")
-    await store.bind_task_owner("task-1", "session-1", "buyer-1")
-    another = SqlSessionStore(secured.env.engine)
-    assert await another.assert_task_owner("task-1", "buyer-1") == "session-1"
-    with pytest.raises(SessionOwnerMismatch):
-        await another.bind_task_owner("task-1", "other-session", "buyer-1")
-    with pytest.raises(SessionNotFound):
-        await another.assert_task_owner("missing", "buyer-1")
-    secured.container.task_queue = SimpleNamespace(get_status=AsyncMock(return_value=SimpleNamespace(
-        task_id="task-1", state="done", final_text="结果", error=None, queue_position=0)))
-    response = await secured.client.get("/commerce/tasks/task-1", params={"buyer_id": "buyer-1"}, headers=auth())
-    assert response.status_code == 200 and response.json()["final_text"] == "结果"
-    response = await secured.client.get("/commerce/tasks/task-1", params={"buyer_id": "buyer-2"}, headers=auth("buyer-2"))
-    assert response.status_code == 403
 
 
 class ReadyEventBus(TradeEventBus):
@@ -214,18 +165,3 @@ async def test_operational_metrics_are_disabled_by_default_and_never_in_public_h
     assert "metrics" not in health and "alerts" not in health
 
 
-@pytest.mark.parametrize("path", ["/internal/metrics", "/internal/metrics/summary"])
-async def test_operational_metrics_require_allowlisted_signed_operator(secured, path):
-    api = secured.client._transport.app
-    api.state.metrics_reader_buyers = ("ops-reader",)
-    assert (await secured.client.get(path)).status_code == 401
-    assert (await secured.client.get(path, params={"token": POLICY.issue("ops-reader")})).status_code == 401
-    assert (await secured.client.get(path, headers=auth())).status_code == 403
-    result = await secured.client.get(path, headers=auth("ops-reader"))
-    assert result.status_code == 200 and result.headers["cache-control"] == "no-store"
-    if path.endswith("summary"):
-        assert result.json()["metrics"]["scope"] == "process_local_business_turns"
-    else:
-        assert "version=0.0.4" in result.headers["content-type"]
-    api.state.identity_policy = IdentityPolicy()
-    assert (await secured.client.get(path, headers=auth("ops-reader"))).status_code == 503

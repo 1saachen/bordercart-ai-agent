@@ -1,13 +1,10 @@
 # -*- coding: utf-8 -*-
 """装配容器（Composition Root）
 
-API 进程与 worker 进程共用同一份接线，避免两处各自 new 一套导致行为漂移。
+API 进程使用单一组合根，保证本地运行时所有 Agent 共享同一份依赖。
 洋葱由内向外装配：infrastructure → application → （presentation 在 server.py）。
 
-所有外部依赖都是可选的，按「不配就降级」设计：
-    DATABASE_URL 未配 → SQLite；= "file" → JSON 文件存储
-    REDIS_URL    未配 → 无缓存、无队列、无跨进程事件背板
-    QUEUE_ENABLED=0  → 不入队，请求在 API 进程内直接跑（三期行为）
+核心版固定本地单进程：SQLite、本地事件总线、Qdrant 和 AgentScope KnowledgeBase。
 """
 from __future__ import annotations
 
@@ -156,7 +153,7 @@ async def build_container() -> Container:
     trade_store = SqlTradeStore(trade_db_engine)
     confirmations = ConfirmationService(product_repo, trade_store, bus=bus)
 
-    # 熔断注册表：开 BREAKER_SHARED 且 Redis 可用时跨实例共享，否则进程内
+    # 工具熔断状态保存在当前进程内。
     circuit_registry = CircuitBreakerRegistry(
         failure_threshold=settings.tool_failure_threshold,
         reset_seconds=settings.tool_circuit_reset_seconds,
@@ -169,7 +166,7 @@ async def build_container() -> Container:
 
     # ---- Application ----
     catalog_search = CatalogSearchUseCase(
-        product_repo, embedder=embedder, vector_index=vector_index, reranker=None,
+        product_repo, embedder=embedder, vector_index=vector_index,
         hybrid_enabled=False,
         hybrid_lexical_weight=1.0,
         hybrid_vector_weight=1.0,
@@ -203,7 +200,7 @@ async def build_container() -> Container:
     )
     sessions = SessionRegistry(main_factory, session_store, enforce_owner=settings.session_owner_binding)
     orchestrator = MainAgentOrchestrator(
-        sessions, bus, preference_store, conversation_store, None,
+        sessions, bus, preference_store, conversation_store,
         output_guard_enabled=settings.output_guard_enabled,
         token_budget_total=settings.token_budget_total,
         preference_selector=preference_selector,

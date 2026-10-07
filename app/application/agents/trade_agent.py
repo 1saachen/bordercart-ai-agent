@@ -35,7 +35,7 @@ from app.infrastructure.resilience import (
     ToolResilienceMiddleware,
 )
 from app.infrastructure.settings import Settings
-from app.infrastructure.tracing import build_agent_middlewares
+from app.infrastructure.agent_middlewares import build_agent_middlewares
 
 
 class TradeAgentFactory:

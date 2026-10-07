@@ -169,24 +169,6 @@ async def test_empty_search_clears_client_products():
     assert snapshots[-1]["products"] == [] and snapshots[-1]["searchCompleted"] is True
 
 
-async def test_ag_ui_bypasses_text_only_semantic_cache_but_legacy_keeps_it():
-    orchestrator, agent, _ = make_orchestrator()
-    cache = SimpleNamespace(
-        lookup=AsyncMock(return_value=SimpleNamespace(reply="缓存推荐文本", similarity=1.0, matched_query="旅行三件套")),
-        remember=AsyncMock(),
-    )
-    orchestrator._semantic_cache = cache
-    events = await collect(orchestrator)
-    assert agent.calls == 1
-    assert any(event["type"] == "TOOL_CALL_RESULT" for event in events)
-    cache.lookup.assert_not_awaited()
-    cache.remember.assert_not_awaited()
-    body = RunAgentInput.model_validate(request_data())
-    result = await orchestrator.handle_intent(parse_intent(body))
-    assert result.final_text == "缓存推荐文本" and agent.calls == 1
-    cache.lookup.assert_awaited_once()
-
-
 @pytest.mark.parametrize("reason", list(ReplyFinishedReason))
 def test_native_finished_reason_enum_is_recognized(reason):
     adapter = AGUIRunAdapter(RunAgentInput.model_validate(request_data()), lambda event: None)
@@ -313,20 +295,6 @@ async def test_http_disconnect_cancels_agent_and_persists_interruption(swallow_c
     assert any(turn.role == "agent" and turn.content == "[cancelled] 本轮执行已中断" for turn in saved_turns)
     assert not orchestrator._session_locks["session-test"].locked()
     assert not any(b"RUN_FINISHED" in message.get("body", b"") for message in responses)
-
-@pytest.mark.parametrize('kind',['capability','contract'])
-async def test_old_session_version_returns_actionable_protocol_error(kind):
-    from app.infrastructure.capability_registry import CapabilityVersionChanged
-    from app.infrastructure.prompt_registry import PromptContractChanged
-    orchestrator,agent,sessions=make_orchestrator()
-    error=CapabilityVersionChanged('old') if kind=='capability' else PromptContractChanged('old')
-    sessions.get_or_create=AsyncMock(side_effect=error)
-    frames=[frame async for frame in stream_run(orchestrator,RunAgentInput.model_validate(request_data()),parse_intent(RunAgentInput.model_validate(request_data())))]
-    last=decode_frames(frames)[-1]
-    assert last['type']=='RUN_ERROR' and last['code']=='SESSION_VERSION_CHANGED'
-    assert '旧记录仍保留' in last['message']
-    assert agent.calls==0
-
 
 async def test_context_capacity_error_is_actionable_and_never_retries_business():
     from app.infrastructure.context_governance import ContextCapacityError

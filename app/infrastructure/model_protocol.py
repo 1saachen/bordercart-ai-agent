@@ -1,7 +1,16 @@
 """校验最终 HTTP 工具合同；不信任兼容网关会遵守 tool_choice。"""
 from __future__ import annotations
 
-from app.infrastructure.prompt_cache import value
+def value(item, name=None):
+    """兼容 dict 和 SDK 对象字段，不引入额外基础设施。"""
+    if name is None:
+        return item
+    if isinstance(item, dict):
+        return item.get(name)
+    try:
+        return getattr(item, name, None)
+    except Exception:
+        return None
 
 
 class ModelProtocolViolation(RuntimeError):

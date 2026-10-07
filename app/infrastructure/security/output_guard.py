@@ -25,7 +25,6 @@ REDACTED = "[已脱敏]"
 _INTERNAL_TOOLS = (
     "product_search_tool",
     "category_insight_tool",
-    "web_search_tool",
     "create_order_tool",
     "query_order_tool",
     "cancel_order_tool",

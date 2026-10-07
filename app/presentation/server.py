@@ -30,7 +30,7 @@ from app.presentation.connection import ConnectionManager
 from app.presentation.confirmations import register_confirmation_routes, confirmation_error
 from app.presentation.ag_ui import register_ag_ui_routes
 from app.presentation.buyer_workspace import register_buyer_workspace_routes
-from app.presentation.identity import require_buyer, require_session, require_metrics_reader
+from app.presentation.identity import require_buyer, require_session
 from app.presentation.dto import (
     CancelOrderRequest,
     SubmitIntentRequest,
@@ -51,7 +51,6 @@ def build_app() -> FastAPI:
         application.state.identity_policy = getattr(c, "identity_policy", None)
         application.state.session_store = getattr(c, "session_store", None)
         application.state.session_owner_binding = getattr(getattr(c, "settings", None), "session_owner_binding", True)
-        application.state.metrics_reader_buyers = getattr(getattr(c, "settings", None), "metrics_reader_buyers", ())
         state["connections"] = ConnectionManager(c.bus)
         await c.startup()
         try:
@@ -111,7 +110,10 @@ def build_app() -> FastAPI:
                 trade_database = trade_engine.url.get_backend_name()
             except Exception:
                 trade_database = "error"
-        qdrant = "ok"
+        try:
+            qdrant = await c.vector_index.health()
+        except Exception:
+            qdrant = "error"
         ready = not database.startswith("error") and trade_database != "error" and qdrant != "error"
         result = {
             "status": "ok" if ready else "degraded",
@@ -122,20 +124,6 @@ def build_app() -> FastAPI:
             "qdrant": qdrant,
         }
         return result if ready else JSONResponse(status_code=503, content=result)
-
-    @api.get("/internal/metrics", include_in_schema=False)
-    async def prometheus_metrics(request: Request) -> Response:
-        await require_metrics_reader(request)
-        from app.infrastructure.operational_metrics import registry
-        return Response(registry.prometheus(), media_type="text/plain; version=0.0.4",
-                        headers={"Cache-Control": "no-store"})
-
-    @api.get("/internal/metrics/summary", include_in_schema=False)
-    async def metrics_summary(request: Request) -> JSONResponse:
-        await require_metrics_reader(request)
-        from app.infrastructure.operational_metrics import registry
-        return JSONResponse({"metrics": registry.snapshot(), "alerts": registry.alerts()},
-                            headers={"Cache-Control": "no-store"})
 
     @api.post("/commerce/intents", response_model=SubmitIntentResponse)
     async def submit_intent(request: Request, body: SubmitIntentRequest) -> SubmitIntentResponse:

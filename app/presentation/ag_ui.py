@@ -21,7 +21,6 @@ from app.infrastructure.eventbus import observe_run_events
 from app.infrastructure.ag_ui_journal import JournalConflict, JournalForbidden, JournalNotFound
 from app.presentation.ag_ui_runtime import AGUIRuntime
 from app.presentation.identity import require_buyer, require_session
-from app.infrastructure.capability_registry import CapabilityVersionChanged
 import json
 
 logger = logging.getLogger(__name__)
@@ -86,7 +85,7 @@ async def stream_run(
             with observe_run_events(adapter.on_trade_event):
                 # 现有语义缓存只存最终文本，无法恢复商品事实；AG-UI 首版不读写此缓存。
                 result = await orchestrator.handle_intent(
-                    intent, event_observer=adapter.on_agent_event, use_semantic_cache=False,
+                    intent, event_observer=adapter.on_agent_event,
                 )
             error = result.error or adapter.error
             if error:
@@ -170,8 +169,6 @@ def register_ag_ui_routes(
             if getattr(getattr(getattr(orchestrator, "_sessions", None), "_main_factory", None), "buyer_skill_store", None) is not None:
                 return await orchestrator.available_skills(buyer_id)
             return await orchestrator.available_skills()
-        except CapabilityVersionChanged as err:
-            raise HTTPException(status_code=409, detail="选购方案刚刚更新，请刷新列表后重试。") from err
         except Exception as err:
             logger.warning("读取已发布选购方案失败：%s", type(err).__name__)
             raise HTTPException(status_code=503, detail="选购方案暂时无法读取，请稍后刷新。") from err

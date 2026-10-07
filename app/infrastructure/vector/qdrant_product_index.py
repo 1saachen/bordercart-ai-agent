@@ -100,6 +100,10 @@ class QdrantProductIndex(ProductVectorIndex):
     async def close(self) -> None:
         await self._client.close()
 
+    async def health(self) -> str:
+        await self._client.collection_exists(self._collection)
+        return "ok"
+
     async def search_filtered(self, embedding: list[float], top_n: int, *, product_ids: list[str]) -> list[VectorHit]:
         """小目录从权威数据计算资格，用已有 point ID 过滤，无需新增稀疏索引。"""
         if not product_ids:

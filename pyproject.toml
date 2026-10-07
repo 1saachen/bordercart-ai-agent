@@ -1,7 +1,7 @@
 [project]
-name = "globex-agent"
+name = "bordercart-ai-agent"
 version = "0.1.0"
-description = "Globex 跨境电商 Agent（AgentScope 版 MVP）：DDD 洋葱架构 + MainAgent/SearchAgent/TradeAgent"
+description = "BorderCart AI 跨境电商多 Agent：商品 RAG、KnowledgeBase 与交易确认"
 readme = "README.md"
 # AgentScope 2.x 要求 Python >= 3.11
 requires-python = ">=3.11,<3.14"
@@ -11,9 +11,6 @@ dependencies = [
     "aiosqlite>=0.22.1",
     "fastapi>=0.115",
     "httpx>=0.28.1",
-    "opentelemetry-api==1.44.0",
-    "opentelemetry-sdk==1.44.0",
-    "opentelemetry-exporter-otlp-proto-http==1.44.0",
     "python-dotenv>=1.2.2",
     "pyjwt==2.13.0",
     "pyyaml>=6.0.3",
@@ -23,15 +20,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-redis = [
-    "redis>=8.1.0",
-]
-retrieval = [
-    "fastembed==0.7.4",
-]
-optimization = [
-    "gepa==0.1.4",
-]
 
 # 声明为独立 workspace root，避免 uv 向上探测课程仓库根部的 pyproject
 [tool.uv.workspace]

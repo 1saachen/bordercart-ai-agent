@@ -3,10 +3,7 @@
 
 从 .env / 环境变量读取全部配置，Infrastructure 之外不允许直接触碰 os.environ。
 
-二期增量：embedding / Qdrant / Reranker / Tavily / OTLP / 数据目录。
-三期增量：品类知识库 collection、Context 工程（压缩阈值/结果截断/Token 预算）、工具超时与熔断、CORS。
-四期增量：模型回退与网关配额闸门（并发上限/请求间隔/重试次数）。
-可选能力全部按"空值即关闭/降级"设计，保证零外部依赖也能启动。
+核心配置：模型、商品 Qdrant、品类 KnowledgeBase、SQLite、上下文治理和本地单进程运行参数。
 """
 from __future__ import annotations
 
@@ -60,9 +57,6 @@ class Settings:
     llm_max_concurrency: int = 2  # 同时在飞的模型请求上限
     llm_min_interval_seconds: float = 1.0  # 相邻请求起跑最小间隔，治速率爬升过快
     llm_max_retries: int = 2  # 瞬时故障重试次数（指数退避）
-    prompt_cache_mode: str = "passthrough"
-    prompt_cache_policy: str = "static"
-    skill_catalog_mode: str = "legacy"  # append_only 为变化驱动候选，收益验收后再启用
     # ---- 四期：存储 ----
     # 默认 SQLite（零外部依赖，落在 DATA_DIR/globex.db）。
     # 换服务型数据库需自行装异步驱动（aiomysql / asyncpg）并改此 URL，本仓未验证。
@@ -85,7 +79,6 @@ class Settings:
     preference_subagent_inject: bool = True  # 给检索子 Agent 注入偏好（纯本地拼装，零成本）
     session_owner_binding: bool = True
     identity_mode: str = "demo"
-    metrics_reader_buyers: tuple[str, ...] = ()
     identity_hmac_secret: str = field(default="", repr=False)
     recall_candidates: int = 32
     embedding_version: str = ""  # 同名模型更新权重或编码方式时，用版本区分已存向量
@@ -104,7 +97,6 @@ def load_settings() -> Settings:
     data_dir.mkdir(parents=True, exist_ok=True)  # SQLite 默认落在此目录，建库前必须存在
     return Settings(
         context_strategy=os.getenv("CONTEXT_STRATEGY", "legacy"),
-        skill_catalog_mode=os.getenv("SKILL_CATALOG_MODE", "legacy"),
         context_pruning_timing=os.getenv("CONTEXT_PRUNING_TIMING", "after_use"),
         context_product_tokens=int(os.getenv("CONTEXT_PRODUCT_TOKENS", "6000")),
         context_prompt_layout=os.getenv("CONTEXT_PROMPT_LAYOUT", "legacy_system"),
@@ -126,9 +118,9 @@ def load_settings() -> Settings:
         embedding_version=os.getenv("EMBEDDING_VERSION", ""),
         embedding_dim=int(os.getenv("EMBEDDING_DIM", "1024")),
         qdrant_url=os.getenv("QDRANT_URL", ""),
-        qdrant_collection=os.getenv("QDRANT_COLLECTION", "globex_products"),
+        qdrant_collection=os.getenv("QDRANT_COLLECTION", "bordercart_products"),
         data_dir=data_dir,
-        category_kb_collection=os.getenv("CATEGORY_KB_COLLECTION", "globex_category_kb"),
+        category_kb_collection=os.getenv("CATEGORY_KB_COLLECTION", "bordercart_category_kb"),
         context_size=int(os.getenv("CONTEXT_SIZE", "128000")),
         tool_result_limit=int(os.getenv("TOOL_RESULT_LIMIT", "20000")),
         reply_token_budget=int(os.getenv("REPLY_TOKEN_BUDGET", "0")),
@@ -146,13 +138,11 @@ def load_settings() -> Settings:
         llm_max_concurrency=int(os.getenv("LLM_MAX_CONCURRENCY", "2")),
         llm_min_interval_seconds=float(os.getenv("LLM_MIN_INTERVAL_SECONDS", "1.0")),
         llm_max_retries=int(os.getenv("LLM_MAX_RETRIES", "2")),
-        prompt_cache_mode=os.getenv("PROMPT_CACHE_MODE", "passthrough"),
-        prompt_cache_policy=os.getenv("PROMPT_CACHE_POLICY", "static"),
         # 兼容早期变量名 MYSQL_URL；两者都没配时默认本地 SQLite
         database_url=(
             os.getenv("DATABASE_URL")
             or os.getenv("MYSQL_URL")
-            or f"sqlite+aiosqlite:///{data_dir / 'globex.db'}"
+            or f"sqlite+aiosqlite:///{data_dir / 'bordercart.db'}"
         ),
         output_guard_enabled=os.getenv("OUTPUT_GUARD_ENABLED", "1") not in ("0", "false", "False"),
         token_budget_total=int(os.getenv("TOKEN_BUDGET_TOTAL", "0")),
@@ -163,6 +153,5 @@ def load_settings() -> Settings:
         not in ("0", "false", "False"),
         session_owner_binding=os.getenv("SESSION_OWNER_BINDING", "1") not in ("0", "false", "False"),
         identity_mode=os.getenv("IDENTITY_MODE", "demo"),
-        metrics_reader_buyers=tuple(item.strip() for item in os.getenv("METRICS_READER_BUYERS", "").split(",") if item.strip()),
         identity_hmac_secret=os.getenv("IDENTITY_HMAC_SECRET", ""),
     )

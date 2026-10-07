@@ -137,7 +137,7 @@ class AGUIRuntime:
                 adapter.snapshot()
             with observe_run_events(adapter.on_trade_event):
                 result = await self.orchestrator.handle_intent(intent, event_observer=adapter.on_agent_event,
-                    use_semantic_cache=False, persistence_guard=entry.is_valid)
+                    persistence_guard=entry.is_valid)
             if not entry.is_valid():
                 raise asyncio.CancelledError()
             if getattr(result,"error_code",None)=="SESSION_VERSION_CHANGED":

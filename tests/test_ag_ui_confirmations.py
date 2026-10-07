@@ -102,7 +102,7 @@ async def test_fresh_session_invalidates_before_loading_and_clears_preference_ma
     sessions.get_or_create = load
     orchestrator._injected_preferences["session-test"] = "stale-marker"
     body = RunAgentInput.model_validate(request_data())
-    result = await orchestrator.handle_intent(parse_intent(body), fresh_session=True, use_semantic_cache=False)
+    result = await orchestrator.handle_intent(parse_intent(body), fresh_session=True)
     assert result.error is None
     assert calls[:2] == ["invalidate", "load"]
     assert orchestrator._injected_preferences.get("session-test") != "stale-marker"
@@ -115,7 +115,7 @@ async def test_known_lost_lease_never_persists_agent_or_conversation():
     conversation = SimpleNamespace(touch_session=AsyncMock(), append_turn=AsyncMock(), append_events=AsyncMock())
     orchestrator._conversation_store = conversation
     body = RunAgentInput.model_validate(request_data())
-    await orchestrator.handle_intent(parse_intent(body), persistence_guard=lambda: False, use_semantic_cache=False)
+    await orchestrator.handle_intent(parse_intent(body), persistence_guard=lambda: False)
     assert sessions.persisted == 0
     sessions.invalidate.assert_awaited_once_with("session-test")
     conversation.touch_session.assert_not_awaited()
@@ -138,7 +138,7 @@ async def test_session_lease_automatically_reloads_and_combines_caller_guard():
 
     orchestrator._session_lease_factory = lease
     body = RunAgentInput.model_validate(request_data())
-    await orchestrator.handle_intent(parse_intent(body), persistence_guard=lambda: False, use_semantic_cache=False)
+    await orchestrator.handle_intent(parse_intent(body), persistence_guard=lambda: False)
     assert sessions.persisted == 0
     assert sessions.invalidate.await_count == 2
     assert held == []

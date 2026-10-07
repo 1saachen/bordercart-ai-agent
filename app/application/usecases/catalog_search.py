@@ -5,11 +5,11 @@
     1. EmbeddingClient 把 normalized_query 向量化
     2. ProductVectorIndex.search(top_n) 拿候选 product_id（Qdrant，COSINE）
     3. ProductRepository.find_by_ids 还原 Product 聚合
-    4. Reranker 精排取 top_k；失败/未配置降级按向量分排序（rerank_applied=false）
+    4. 按向量分稳定排序并应用结构化硬约束
     5. 组装商品卡 JSON；命中 ship_to 时内联到手价（小计+运费+关税，统一目标币种）
 
 降级链（recall_strategy 如实标注）：
-    embedding_rerank → embedding_only → keyword_2gram（embedding 服务异常时兜底）
+    embedding_only → keyword_2gram（embedding 服务异常时兜底）
 
 计价收敛设计：到手价在检索链路内联计算（TariffSchedule 规则内核），
 不给 Agent 单独暴露比价/运费工具，减少不必要的工具调用轮次。
@@ -30,7 +30,6 @@ from app.domain.catalog.ports.product_repository import ProductRepository
 from app.domain.catalog.ports.retrieval_ports import (
     EmbeddingClient,
     ProductVectorIndex,
-    Reranker,
 )
 from app.domain.catalog.product import Product
 from app.domain.catalog.product_search_spec import ProductSearchSpec
@@ -136,7 +135,6 @@ class CatalogSearchUseCase:
         product_repo: ProductRepository,
         embedder: Optional[EmbeddingClient] = None,
         vector_index: Optional[ProductVectorIndex] = None,
-        reranker: Optional[Reranker] = None,
         tariff_schedule: Optional[TariffSchedule] = None,
         hybrid_enabled: bool = False,
         hybrid_lexical_weight: float = 1.0,
@@ -155,7 +153,6 @@ class CatalogSearchUseCase:
         self._product_repo = product_repo
         self._embedder = embedder
         self._vector_index = vector_index
-        self._reranker = reranker
         self._tariff = tariff_schedule or TariffSchedule(rates=ExchangeRateTable())
 
     async def execute(self, spec: ProductSearchSpec) -> dict:
@@ -169,7 +166,6 @@ class CatalogSearchUseCase:
             return await self._execute_hybrid(spec)
         scored: list[tuple[float, Product]] = []
         recall_strategy = "keyword_2gram"
-        rerank_applied = False
 
         if self._embedder is not None and self._vector_index is not None:
             try:
@@ -179,15 +175,7 @@ class CatalogSearchUseCase:
                 logger.warning("向量召回不可用，降级关键词召回：%s", err)
                 scored = []
 
-        if recall_strategy == "embedding_only" and scored:
-            # 二阶段精排；失败降级按向量分排序
-            try:
-                scored = await self._rerank(spec, scored)
-                recall_strategy = "embedding_rerank"
-                rerank_applied = True
-            except Exception as err:  # noqa: BLE001
-                logger.warning("rerank 不可用，按向量分排序：%s", err)
-        elif not scored:
+        if not scored:
             scored = await self._keyword_recall(spec)
             recall_strategy = "keyword_2gram"
 
@@ -206,7 +194,6 @@ class CatalogSearchUseCase:
             "hits": [card.to_dict() for card in hits],
             "total_candidates": len(filtered),
             "recall_strategy": recall_strategy,
-            "rerank_applied": rerank_applied,
         }
         if filtered_out:
             # 如实告知"召回到了但被硬约束挡掉"，否则模型分不清"库里没有"与"被过滤"，
@@ -245,7 +232,7 @@ class CatalogSearchUseCase:
                     card["skus"] = [sku for sku in card["skus"] if sku["sku_id"] in accepted]
                 hits.append(card)
         return {"hits": hits[:spec.top_k], "total_candidates": len(hits),
-                "recall_strategy": "exact_id_lookup", "rerank_applied": False,
+                "recall_strategy": "exact_id_lookup",
                 "requested_identifiers": identifiers, "missing_identifiers": missing,
                 "filtered_out": rejected[:_FILTERED_OUT_LIMIT], "existence_checked": True}
 
@@ -303,14 +290,6 @@ class CatalogSearchUseCase:
                 "fused_candidates": [p.product_id for _, p in scored],
             }
         strategy = "hybrid_only" if vector_hits is not None else "bm25"
-        rerank_applied = False
-        if scored and self._reranker is not None:
-            try:
-                scored = await self._rerank(spec, scored)
-                strategy, rerank_applied = ("hybrid_rerank" if vector_hits is not None else "bm25_rerank"), True
-            except Exception as err:
-                diagnostics["reranker_error"] = getattr(err, "code", type(err).__name__)
-                logger.warning("Hybrid 重排不可用：%s", diagnostics["reranker_error"])
         deduped, seen = [], set()
         for score, product in scored:
             key = product.canonical_product_id or product.product_id
@@ -318,7 +297,7 @@ class CatalogSearchUseCase:
                 seen.add(key)
                 deduped.append((score, product))
         result = {"hits": [self._to_card(score, p, spec).to_dict() for score, p in deduped[:spec.top_k]],
-                "total_candidates": len(deduped), "recall_strategy": strategy, "rerank_applied": rerank_applied,
+                "total_candidates": len(deduped), "recall_strategy": strategy,
                 "retrieval_variant": "bm25_vector_rrf_v1", "vector_available": vector_hits is not None,
                 "filtered_out": rejected, "retrieval_diagnostics": diagnostics}
         if stages is not None:
@@ -373,32 +352,11 @@ class CatalogSearchUseCase:
             by_id = {product.product_id: product for product in products}
             scored = [(hit.score, by_id[hit.product_id]) for hit in vector_hits if hit.product_id in by_id]
             # Qdrant 对完全相同的向量分数可能返回不同的内部顺序；同分时按权威
-            # 商品 ID 稳定排序，避免关闭 reranker 后结果随索引重建漂移。
+            # 商品 ID 稳定排序，避免索引重建导致同分结果漂移。
             scored.sort(key=lambda pair: (-pair[0], pair[1].product_id))
             if not adaptive or len(vector_hits) < top_n or top_n >= 256 or sum(self._reject_reason(p, spec) is None for _, p in scored) >= spec.top_k:
                 return scored
             top_n = min(256, top_n*2)
-
-    # ---- 二阶段：精排 ----
-
-    async def _rerank(
-        self,
-        spec: ProductSearchSpec,
-        scored: list[tuple[float, Product]],
-    ) -> list[tuple[float, Product]]:
-        if self._reranker is None:
-            raise RuntimeError("Reranker 未配置")
-        documents = [product.searchable_text() for _, product in scored]
-        rerank_scores = await self._reranker.rerank(spec.normalized_query, documents)
-        import math
-        if len(rerank_scores) != len(scored) or not all(math.isfinite(float(score)) for score in rerank_scores):
-            raise ValueError("重排分数必须等长且有限")
-        reranked = [
-            (rerank_scores[i], product)
-            for i, (_, product) in enumerate(scored)
-        ]
-        reranked.sort(key=lambda pair: pair[0], reverse=True)
-        return reranked
 
     # ---- 兜底：关键词召回 ----
 
