@@ -50,7 +50,7 @@ def test_qdrant_server_matches_locked_client_minor_version() -> None:
 
 
 def test_compose_shares_context_and_independent_embedding_configuration():
-    compose = yaml.safe_load((PROJECT_ROOT / "docker/docker-compose.yaml").read_text())
+    compose = yaml.safe_load((PROJECT_ROOT / "docker/docker-compose.yaml").read_text(encoding="utf-8"))
     required = {
         "CONTEXT_STRATEGY": "${CONTEXT_STRATEGY:-layered}",
         "CONTEXT_PRUNING_TIMING": "${CONTEXT_PRUNING_TIMING:-pressure}",

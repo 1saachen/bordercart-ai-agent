@@ -94,10 +94,10 @@ class MainAgentFactory:
         # 与 orchestrator 共用同一个 selector，保证主/子 Agent 的偏好选取口径一致
         self._preference_selector = preference_selector or PreferenceSelector()
         # 护栏判定器按会话累积状态，须跨 Agent 实例共享（与熔断注册表同理）
-        self._sequencing = sequencing or SequencingTracker()
-        self._loop_detector = loop_detector or LoopDetector(
+        self._sequencing = (sequencing or SequencingTracker()) if settings.harness_enabled else None
+        self._loop_detector = (loop_detector or LoopDetector(
             repeat_threshold=settings.loop_repeat_threshold,
-        )
+        )) if settings.harness_enabled else None
         self._search_factory.bind_harness(self._sequencing, self._loop_detector)
         self._trade_factory.bind_harness(self._sequencing, self._loop_detector)
 
@@ -183,15 +183,20 @@ class MainAgentFactory:
                               "航司名称或买家填写的尺寸不等于已核实的行李政策；缺少航线/舱位信息或商品尺寸证据时继续澄清。"
                               "重量优先级只是本次取舍，不是具体重量上限。表单不写长期记忆，也不能批准记忆或订单操作。")
         skill_middlewares = []
-        if self._capability_registry is not None:
+        if self._capability_registry is not None or self.buyer_skill_store is not None:
             available_tools = {tool.name for tool in tools}
-            system_prompt += "\n\n" + (STABLE_CAPABILITY_POLICY if self.skill_catalog_mode == "append_only"
-                                        else capability_hint(self._capability_registry, available_tools))
-            tools.extend(FunctionTool(tool, is_read_only=True, middlewares=self._resilience())
-                         for tool in build_capability_tools(self._capability_registry, available_tools, self._bus, self.buyer_skill_store))
-            if self.skill_catalog_mode == "append_only":
-                skill_middlewares.append(SkillCatalogMiddleware(
-                    self._capability_registry, self.buyer_skill_store, available_tools))
+            if self._capability_registry is None:
+                from app.application.tools.capability_tools import build_capability_tools
+                tools.extend(FunctionTool(tool, is_read_only=True, middlewares=self._resilience())
+                             for tool in build_capability_tools(None, available_tools, self._bus, self.buyer_skill_store))
+            else:
+                system_prompt += "\n\n" + (STABLE_CAPABILITY_POLICY if self.skill_catalog_mode == "append_only"
+                                            else capability_hint(self._capability_registry, available_tools))
+                tools.extend(FunctionTool(tool, is_read_only=True, middlewares=self._resilience())
+                             for tool in build_capability_tools(self._capability_registry, available_tools, self._bus, self.buyer_skill_store))
+                if self.skill_catalog_mode == "append_only":
+                    skill_middlewares.append(SkillCatalogMiddleware(
+                        self._capability_registry, self.buyer_skill_store, available_tools))
 
         return allow_business_tools(
             ContextAwareAgent(

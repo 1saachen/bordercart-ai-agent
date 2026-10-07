@@ -53,8 +53,10 @@ async def preload_selected_skill(selection: SelectedSkill, *, registry, agent, b
             record_exception=False, set_status_on_exception=False) as span:
         try:
             snapshot = ShoppingContext.current()
+            is_personal = selection.id.startswith("personal-")
             if (snapshot is None or snapshot.buyer_id != buyer_id or snapshot.shopping_session_id != session_id
-                    or not snapshot.capability_digest or registry is None):
+                    or (not is_personal and (not snapshot.capability_digest or registry is None))
+                    or (is_personal and personal_store is None)):
                 raise SelectedSkillError(SELECTION_ERROR)
             if persistence_guard is not None and not persistence_guard():
                 raise SelectedSkillError(SELECTION_ERROR)
@@ -65,13 +67,11 @@ async def preload_selected_skill(selection: SelectedSkill, *, registry, agent, b
 
             def read():
                 # 重查 owner，读取事务内再比较 digest，防止绑定与读取之间发生发布/撤销。
-                if registry.bind_session(session_id, buyer_id) != snapshot.capability_digest:
-                    raise SelectedSkillError(SELECTION_ERROR)
-                if selection.id.startswith("personal-"):
-                    if personal_store is None:
-                        raise SelectedSkillError(SELECTION_ERROR)
+                if is_personal:
                     loaded = personal_store.load(buyer_id, selection.id, selection.version)
                 else:
+                    if registry.bind_session(session_id, buyer_id) != snapshot.capability_digest:
+                        raise SelectedSkillError(SELECTION_ERROR)
                     loaded = registry.load_skill(selection.id, selection.version,
                     available_tools=names & SKILL_TOOL_ALLOWLIST, expected_digest=snapshot.capability_digest,
                     require_current=snapshot.skill_catalog_mode == "append_only")

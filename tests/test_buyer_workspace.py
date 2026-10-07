@@ -77,6 +77,19 @@ async def test_http_private_crud_isolation_versions_and_restart(tmp_path):
         assert (await c.get("/commerce/skills?buyer_id=alice",headers=headers(policy))).json()["skills"]==[]
 
 
+async def test_personal_skill_catalog_does_not_require_public_registry(tmp_path):
+    api,o,store,_,_,policy=fixture(tmp_path)
+    o._sessions._main_factory.capability_registry=None
+    skill=store.save("alice","轻装旅行","周末出游时","按重量和容量比较")
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=api),base_url="http://test") as c:
+        response=await c.get("/commerce/skills?buyer_id=alice",headers=headers(policy))
+    assert response.status_code==200
+    result=response.json()
+    assert result["skills"][0]["id"]==skill["id"]
+    assert result["skills"][0]["content_hash"]==skill["content_hash"]
+    assert len(result["capability_digest"])==64
+
+
 @pytest.mark.parametrize("extra",[{"buyer_id":"bob"},{"allowed_tools":["create_order_tool"]},{"authority":"system"},{"id":"../global"}])
 async def test_personal_skill_http_cannot_claim_owner_or_permissions(tmp_path,extra):
     api,*_,policy=fixture(tmp_path)
@@ -112,10 +125,23 @@ async def test_private_selected_read_checks_owner_hash_and_latest_version(tmp_pa
     finally:ShoppingContext.reset(token)
 
 
+async def test_explicit_personal_skill_selection_works_without_public_registry(tmp_path):
+    _,_,store,_,_,_=fixture(tmp_path)
+    skill=store.save("alice","轻装旅行","周末出游时","先比较重量")
+    async def schemas():return [{"function":{"name":"load_agent_skill_tool"}}]
+    agent=SimpleNamespace(toolkit=SimpleNamespace(get_tool_schemas=schemas))
+    token=ShoppingContext.set(ShoppingContextSnapshot("session","alice","zh-CN","CNY"))
+    try:
+        reference,_=await preload_selected_skill(SelectedSkill(skill["id"],"1",skill["content_hash"]),
+            registry=None,agent=agent,buyer_id="alice",session_id="session",personal_store=store)
+        assert "先比较重量" in reference.content[0].text
+    finally:ShoppingContext.reset(token)
+
+
 async def test_personal_loader_is_scoped_and_old_tool_body_is_cleared(tmp_path):
     _,_,store,_,registry,_=fixture(tmp_path)
     skill=store.save("alice","名称","用途","私有正文")
-    load,_=build_capability_tools(registry,set(),TradeEventBus(),store)
+    load,=build_capability_tools(None,set(),TradeEventBus(),store)
     token=ShoppingContext.set(ShoppingContextSnapshot("s","alice","zh-CN","CNY"))
     try:
         result=await load(skill["id"],"1")

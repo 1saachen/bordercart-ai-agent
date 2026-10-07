@@ -58,7 +58,10 @@ class SearchAgentFactory:
         # 闸门由组装根下发，三个工厂必须共用同一个，否则各限一份等于没限
         self._throttle = throttle
         self.evidence_store = ContextEvidenceStore(settings.data_dir / "context_evidence.db")
-        self.bind_harness(SequencingTracker(), LoopDetector(repeat_threshold=settings.loop_repeat_threshold))
+        self.bind_harness(
+            SequencingTracker() if settings.harness_enabled else None,
+            LoopDetector(repeat_threshold=settings.loop_repeat_threshold) if settings.harness_enabled else None,
+        )
 
     def bind_harness(self, sequencing, loop_detector) -> None:
         """主 Agent 和子 Agent 共用会话护栏，避免派发后重新计数。"""

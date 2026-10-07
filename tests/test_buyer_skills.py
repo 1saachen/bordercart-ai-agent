@@ -81,7 +81,10 @@ async def test_catalog_version_race_returns_conflict_not_mixed_digest(tmp_path, 
         assert response.status_code == 409
         assert "skills" not in response.json()
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=api_for(None)), base_url="http://test") as client:
-        assert (await client.get("/commerce/skills?buyer_id=b1")).status_code == 503
+        response = await client.get("/commerce/skills?buyer_id=b1")
+        assert response.status_code == 200
+        assert response.json()["skills"] == []
+        assert len(response.json()["capability_digest"]) == 64
 
 
 def begin_read(adapter, call="skill-call"):

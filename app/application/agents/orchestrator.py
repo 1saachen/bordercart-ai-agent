@@ -156,20 +156,21 @@ class MainAgentOrchestrator:
         """买家只读目录：与主 Agent 的实际业务工具集合及资料版本保持一致。"""
         factory = getattr(self._sessions, "_main_factory", None)
         registry = getattr(factory, "capability_registry", None)
+        personal = getattr(factory, "buyer_skill_store", None)
         if registry is None:
-            raise RuntimeError("选购方案服务尚未配置")
+            skills = await asyncio.to_thread(personal.list, buyer_id) if buyer_id and personal is not None else []
+            canonical = json.dumps(skills, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            return {"capability_digest": hashlib.sha256(canonical.encode()).hexdigest(), "skills": skills}
         available = {tool.name for tool in [*factory._search_factory.build_tools(), *factory._trade_factory.build_tools()]}
 
         def read():
             digest = registry.version_fingerprint()
-            # metadata 在同一个读取事务中复核 digest；发布竞争不可返回错配的版本。
             metadata = registry.metadata(available_tools=available, expected_digest=digest)
             fields = ("id", "version", "title", "description", "scope", "content_hash", "expires_at")
             return {"capability_digest": digest,
                     "skills": [{key: item[key] for key in fields} for item in metadata]}
 
         result = await asyncio.to_thread(read)
-        personal = getattr(factory, "buyer_skill_store", None)
         if buyer_id and personal is not None:
             result["skills"] = [*await asyncio.to_thread(personal.list, buyer_id), *result["skills"]]
         return result

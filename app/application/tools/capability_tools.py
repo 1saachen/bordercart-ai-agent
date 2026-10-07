@@ -67,7 +67,7 @@ def build_capability_tools(registry, available_tools, bus, personal_store=None):
         try:
             snapshot = ShoppingContext.current()
             expected_digest = None
-            if snapshot is not None:
+            if snapshot is not None and registry is not None:
                 bound_digest = await asyncio.to_thread(registry.bind_session, snapshot.shopping_session_id, snapshot.buyer_id)
                 expected_digest = snapshot.capability_digest or bound_digest
                 if not snapshot.capability_digest:
@@ -79,7 +79,7 @@ def build_capability_tools(registry, available_tools, bus, personal_store=None):
             return ToolChunk(content=[TextBlock(type="text", text=json.dumps(data, ensure_ascii=False))], state=ToolResultState.SUCCESS)
         except Exception as error:
             bus.publish(session, "tool.result", {"tool": tool, "error": str(error)})
-            return ToolChunk(content=[TextBlock(type="text", text=f"[error] 无法读取审核资料：{error}")], state=ToolResultState.ERROR)
+            return ToolChunk(content=[TextBlock(type="text", text=f"[error] 无法读取选购方案：{error}")], state=ToolResultState.ERROR)
 
     async def load_agent_skill_tool(skill_id: str, version: str) -> ToolChunk:
         """按明确版本读取已审核发布或当前买家个人 Skill 正文，不注册工具或改变权限。
@@ -95,6 +95,8 @@ def build_capability_tools(registry, available_tools, bus, personal_store=None):
                     raise ValueError("个人 Skill 缺少可信买家上下文")
                 return personal_store.load(snapshot.buyer_id, skill_id, version)
             snapshot = ShoppingContext.current()
+            if registry is None:
+                raise ValueError("该公共 Skill 功能未启用")
             return registry.load_skill(skill_id, version, available_tools=actual_tools, expected_digest=expected_digest,
                                        require_current=bool(snapshot and snapshot.skill_catalog_mode == "append_only"))
         return await result("load_agent_skill_tool", load, skill_id=skill_id, version=version)
@@ -108,4 +110,4 @@ def build_capability_tools(registry, available_tools, bus, personal_store=None):
         """
         return await result("lookup_strategy_memory_tool", registry.lookup_strategies, query=query, scope=scope)
 
-    return [load_agent_skill_tool, lookup_strategy_memory_tool]
+    return [load_agent_skill_tool, lookup_strategy_memory_tool] if registry is not None else [load_agent_skill_tool]

@@ -23,7 +23,7 @@ Agent 根据需求调用检索与业务工具，页面随运行过程展示回�
 | “这次不要黑色，换几个其他颜色的。” | 在当前选购中更新需求 |
 | “为我选中的商品生成确认单。” | 查看交易信息，明确批准后执行本地订单与库存事务 |
 
-常用的选购方法也可以写成个人 Skill。例如，将“先确认用途，再筛选预算，最后比较重量和容量”保存为 Markdown 步骤，在对话中输入 `/` 选择使用。
+常用的选购方法也可以写成个人 Skill。例如，将“先确认用途，再筛选预算，最后比较重量和容量”保存为 Markdown 步骤，在对话中输入 `/` 选择使用。简化版默认只提供买家自己的 Personal Skill，不要求全局 Capability Registry 或公共 Skill 审核发布服务。
 
 实际回答和候选商品取决于样例目录、模型与检索配置。
 
@@ -41,7 +41,7 @@ Agent 根据需求调用检索与业务工具，页面随运行过程展示回�
 | 商品检索 | Embedding、Qdrant 稠密向量、应用层 BM25、加权 RRF | 权威目录过滤和补召回；专用 HTTP reranker 精排；未使用 Qdrant 稀疏索引 |
 | 品类知识 | Markdown、AgentScope KnowledgeBase | 管理品类知识，为选购与比较提供参考 |
 | 持久化 | SQLite、本地文件 | 保存会话、运行事件、偏好、Skill、确认单、订单与库存 |
-| 可选缓存与队列 | Redis、Redis Streams | 仅在显式启用时提供缓存、共享限流和旧意图异步消费；本地默认关闭 |
+| 可选扩展 | Redis、Redis Streams、Prompt Registry、公共 Skill Registry | 本地默认关闭；仅在显式配置时用于异步队列、Prompt 版本发布或公共 Skill 审核 |
 | 可观测性 | OpenTelemetry、OTLP、Langfuse | 关联 API、Agent、模型和工具调用，记录运行追踪与评分 |
 | 测试与评测 | 后端/前端回归测试、自定义评测脚本 | 验证业务行为，评估商品检索、知识检索、Agent 与上下文治理效果 |
 | 构建与部署 | uv、npm、Docker Compose、Nginx | 依赖管理、全栈部署、静态资源服务与 API 反向代理 |
@@ -50,6 +50,7 @@ Agent 根据需求调用检索与业务工具，页面随运行过程展示回�
 
 - **业务分层**：采用 DDD 洋葱架构，分离领域模型、应用用例、基础设施与接口层，通过 `composition.py` 统一装配依赖。
 - **Agent 协作**：MainAgent 直接处理简单任务，需要任务拆分或上下文隔离时，按需派发给 SearchAgent、TradeAgent。
+- **检索与知识**：SearchAgent 同时提供商品向量检索和品类 KnowledgeBase RAG；Personal Skill 独立保存在买家 SQLite 中，按需注入。
 - **上下文与记忆**：结合语义偏好召回、Skill 按需加载、工具证据保存与上下文裁剪、摘要。
 - **可靠性机制**：使用事务、幂等控制、会话 lease/fencing/CAS，以及持久运行日志，处理重复请求、并发写入与断线恢复。
 
@@ -114,6 +115,8 @@ Agent 根据需求调用检索与业务工具，页面随运行过程展示回�
 uv sync --frozen
 npm --prefix frontend ci
 ```
+
+本地模式不需要 Redis 客户端或 Redis 服务。只有显式使用 Redis 队列/缓存时才安装可选依赖：`uv sync --frozen --extra redis`，并设置 `REDIS_URL` 与对应功能开关。
 
 ### 2. 配置模型
 
@@ -225,7 +228,7 @@ docker compose --env-file .env -f docker/docker-compose.yaml down
 flowchart TD
     User[买家描述需求] --> UI[React 页面]
     UI -->|AG-UI / SSE| API[FastAPI 与持久运行日志]
-    API --> Context[装配会话、偏好、Skill 与 Prompt]
+    API --> Context[装配会话、偏好、Personal Skill]
     Context --> Main[MainAgent]
 
     Main --> Tools[商品、知识、偏好与交易工具]
@@ -269,10 +272,11 @@ flowchart TD
 | `QDRANT_URL` | 使用服务端 Qdrant；本地模式可不配置 |
 | `REDIS_URL`、`QUEUE_ENABLED` | 可选 Redis 与旧意图队列；默认未配置/关闭 |
 | `SEMANTIC_CACHE_ENABLED`、`QUEUE_PRIORITY_ENABLED` | 可选语义缓存和双队列优先级；默认关闭 |
+| `PROMPT_REGISTRY_ENABLED`、`PUBLIC_SKILLS_ENABLED` | Prompt 版本 Registry 和公共 Skill 审核目录；默认关闭。开启公共 Skill 时可与 Personal Skill 并存 |
 | `LANGFUSE_BASE_URL`、`LANGFUSE_PUBLIC_KEY`、`LANGFUSE_SECRET_KEY` | 可选运行追踪 |
 | `HYBRID_RECALL_ENABLED` | 应用层 BM25 + 稠密向量融合，默认 `0`，收益门禁通过后再开启 |
 | `HYBRID_LEXICAL_WEIGHT`、`HYBRID_VECTOR_WEIGHT`、`RECALL_CANDIDATES` | 融合权重默认 `1 / 1`，候选窗口默认 `32` |
-| `RERANKER_MODE` | `http`（默认）/ `disabled`；禁止聊天模型精排回退 |
+| `RERANKER_MODE` | `disabled`（默认）/ `http`；启用时只调用专用 reranker，禁止聊天模型精排回退 |
 | `DATA_DIR` | 本地持久数据目录，含 `shopping_forms.db` 选购表单及提交记录 |
 | `IDENTITY_MODE` | 演示身份或签名身份校验 |
 | `API_PROXY_TARGET` | 前端开发服务代理的后端地址 |

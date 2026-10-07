@@ -9,9 +9,13 @@
 原始结果：
 
 ```text
-..                                                                       [100%]
-2 passed, 1 warning in 0.10s
+....                                                                     [100%]
+4 passed in 3.69s
 ```
+
+本轮新增断言覆盖：默认不创建公共 Prompt/Capability Registry；Personal Skill 仍可独立装配；Harness、HTTP reranker 默认关闭；显式开关仍可读取。
+
+核心后端定向回归：`.venv/Scripts/python.exe -m pytest tests/test_runtime_distribution.py tests/test_simplified_runtime.py tests/test_buyer_workspace.py tests/test_buyer_skills.py tests/test_selected_skill.py tests/test_skill_catalog.py tests/test_knowledge_fixture.py tests/test_harness_middleware.py -q`，`97 passed`。其中 `tests/test_runtime_distribution.py` 已将 Compose 文件读取改为显式 UTF-8，避免 Windows 默认 GBK 误报。
 
 ## 前端回归
 
@@ -55,3 +59,9 @@ API 复用了已占用本地 Qdrant 目录的现有进程（PID 54892），`GET 
 命令：`.venv/Scripts/python.exe -m pytest -q`
 
 结果：`1276 passed, 1 skipped, 60 failed, 85 errors`。失败集中在既有 Windows 编码、Unix `/tmp` 临时目录和外部 Redis/模型前提；本轮只记录原始结果，不将其解释为简化功能通过。
+
+## 依赖与配置检查
+
+- `pyproject.toml` 和 `uv.lock` 均可由 Python `tomllib` 解析。
+- 当前环境未安装 `uv`；尝试通过 pip 安装时代理不可用，未运行 `uv lock`。锁文件只做了与 optional `redis` extra 对应的最小同步，未宣称经过 uv 重新解析。
+- 本轮未修改用户已有的 `app/infrastructure/persistence/json_file_stores.py`、`tests/test_windows_file_store.py` 和 `eval/verification/startup-20261003/`。

@@ -102,7 +102,7 @@ class Settings:
     # ---- 五期：运行时护栏（Harness / 安全 / 预算）----
     # 默认值取向：零成本的纯本地护栏默认开，
     # 会额外调模型或改变模型选择的一律默认关，必须是显式开启的选择。
-    harness_enabled: bool = True  # 单步断言 + 循环检测 + L3 内容过滤
+    harness_enabled: bool = False  # 本地简化模式关闭高级循环护栏；可显式打开
     loop_repeat_threshold: int = 3  # 同一工具连续调用达此数即注入收敛提示
     output_guard_enabled: bool = True  # L4 输出审核（纯正则）
     drift_detect_enabled: bool = False  # 需额外轻量 LLM 调用，默认关
@@ -126,9 +126,11 @@ class Settings:
     session_owner_binding: bool = True
     identity_mode: str = "demo"
     prompt_pin_version: str = ""
+    prompt_registry_enabled: bool = False
+    public_skills_enabled: bool = False
     metrics_reader_buyers: tuple[str, ...] = ()
     identity_hmac_secret: str = field(default="", repr=False)
-    reranker_mode: str = "http"  # 只允许专用 HTTP 精排或显式关闭
+    reranker_mode: str = "disabled"  # 本地简化模式默认关闭；需要时显式启用 HTTP 精排
     reranker_api_key: str = field(default="", repr=False)
     reranker_protocol: str = "flat"  # flat / dashscope
     reranker_timeout_seconds: float = 15.0
@@ -164,7 +166,7 @@ def load_settings() -> Settings:
         llm_base_url=llm_base_url,
         llm_api_key=llm_api_key,
         llm_model=os.getenv("LLM_MODEL", "qwen3-max"),
-        reranker_mode=os.getenv("RERANKER_MODE", "http"),
+        reranker_mode=os.getenv("RERANKER_MODE", "disabled"),
         reranker_api_key=os.getenv("RERANKER_API_KEY") or llm_api_key,
         reranker_protocol=os.getenv("RERANKER_PROTOCOL", "flat"),
         reranker_timeout_seconds=float(os.getenv("RERANKER_TIMEOUT_SECONDS", "15")),
@@ -219,7 +221,7 @@ def load_settings() -> Settings:
         queue_enabled=os.getenv("QUEUE_ENABLED", "0") not in ("0", "false", "False"),
         queue_wait_seconds=float(os.getenv("QUEUE_WAIT_SECONDS", "300")),
         worker_concurrency=int(os.getenv("WORKER_CONCURRENCY", "2")),
-        harness_enabled=os.getenv("HARNESS_ENABLED", "1") not in ("0", "false", "False"),
+        harness_enabled=os.getenv("HARNESS_ENABLED", "0") not in ("0", "false", "False"),
         loop_repeat_threshold=int(os.getenv("LOOP_REPEAT_THRESHOLD", "3")),
         output_guard_enabled=os.getenv("OUTPUT_GUARD_ENABLED", "1") not in ("0", "false", "False"),
         drift_detect_enabled=os.getenv("DRIFT_DETECT_ENABLED", "0") not in ("0", "false", "False"),
@@ -243,6 +245,8 @@ def load_settings() -> Settings:
         session_owner_binding=os.getenv("SESSION_OWNER_BINDING", "1") not in ("0", "false", "False"),
         identity_mode=os.getenv("IDENTITY_MODE", "demo"),
         prompt_pin_version=os.getenv("PROMPT_PIN_VERSION", ""),
+        prompt_registry_enabled=os.getenv("PROMPT_REGISTRY_ENABLED", "0") not in ("0", "false", "False"),
+        public_skills_enabled=os.getenv("PUBLIC_SKILLS_ENABLED", "0") not in ("0", "false", "False"),
         metrics_reader_buyers=tuple(item.strip() for item in os.getenv("METRICS_READER_BUYERS", "").split(",") if item.strip()),
         identity_hmac_secret=os.getenv("IDENTITY_HMAC_SECRET", ""),
     )

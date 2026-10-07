@@ -61,7 +61,10 @@ class TradeAgentFactory:
         self.evidence_store = ContextEvidenceStore(settings.data_dir / "context_evidence.db")
         self._circuit_registry = circuit_registry
         self._throttle = throttle
-        self.bind_harness(SequencingTracker(), LoopDetector(repeat_threshold=settings.loop_repeat_threshold))
+        self.bind_harness(
+            SequencingTracker() if settings.harness_enabled else None,
+            LoopDetector(repeat_threshold=settings.loop_repeat_threshold) if settings.harness_enabled else None,
+        )
 
     def bind_harness(self, sequencing, loop_detector) -> None:
         """与搜索及主 Agent 共享顺序和循环状态；不改变原生权限审批。"""

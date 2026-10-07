@@ -168,9 +168,11 @@ async def build_container() -> Container:
     settings = load_settings()
     identity_policy = IdentityPolicy.from_settings(settings)
     project_root = Path(__file__).resolve().parent.parent
-    prompt_registry = PromptRegistry(settings.data_dir / "prompts" / "registry.sqlite3",
-        toolset_contract(project_root, web_search_enabled=bool(settings.tavily_api_key)), pinned_version=settings.prompt_pin_version)
-    await asyncio.to_thread(prompt_registry.bootstrap, project_root / "app/application/prompts/globex.yml")
+    prompt_registry = None
+    if settings.prompt_registry_enabled:
+        prompt_registry = PromptRegistry(settings.data_dir / "prompts" / "registry.sqlite3",
+            toolset_contract(project_root, web_search_enabled=bool(settings.tavily_api_key)), pinned_version=settings.prompt_pin_version)
+        await asyncio.to_thread(prompt_registry.bootstrap, project_root / "app/application/prompts/globex.yml")
     setup_tracing(settings)
 
     # ---- Infrastructure ----
@@ -257,8 +259,8 @@ async def build_container() -> Container:
         )
     )
     # 护栏判定器同样全进程唯一：按会话累积状态，需跨 Agent 实例与轮次共享
-    sequencing_tracker = SequencingTracker()
-    loop_detector = LoopDetector(repeat_threshold=settings.loop_repeat_threshold)
+    sequencing_tracker = SequencingTracker() if settings.harness_enabled else None
+    loop_detector = LoopDetector(repeat_threshold=settings.loop_repeat_threshold) if settings.harness_enabled else None
     # 漂移检测默认关：它会改变模型行为（并可选地额外调轻量模型），
     # 必须是显式开启的选择；关时注入 None，主链路零开销
     drift_detector = DriftDetector() if settings.drift_detect_enabled else None
@@ -299,7 +301,8 @@ async def build_container() -> Container:
         sequencing=sequencing_tracker,
         loop_detector=loop_detector,
         preference_selector=preference_selector,
-        capability_registry=CapabilityRegistry(settings.data_dir / "capabilities.db"),
+        capability_registry=(CapabilityRegistry(settings.data_dir / "capabilities.db")
+                             if settings.public_skills_enabled else None),
         buyer_skill_store=BuyerSkillStore(settings.data_dir / "buyer_skills.db"),
         shopping_form_store=ShoppingFormStore(settings.data_dir / "shopping_forms.db"),
     )

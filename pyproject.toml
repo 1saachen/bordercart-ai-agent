@@ -18,12 +18,14 @@ dependencies = [
     "pyjwt==2.13.0",
     "pyyaml>=6.0.3",
     "qdrant-client>=1.19.0",
-    "redis>=8.1.0",
     "sqlalchemy[asyncio]>=2.0",
     "uvicorn[standard]>=0.30",
 ]
 
 [project.optional-dependencies]
+redis = [
+    "redis>=8.1.0",
+]
 retrieval = [
     "fastembed==0.7.4",
 ]
