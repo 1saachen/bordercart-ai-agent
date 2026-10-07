@@ -1,82 +1,50 @@
+"""BorderCart 核心版的运行时边界。"""
+
 from app.infrastructure.settings import load_settings
 
 
-async def test_container_uses_core_personal_skill_path_without_registry(monkeypatch, tmp_path):
+def _core_environment(monkeypatch, tmp_path):
     monkeypatch.setenv("LLM_API_KEY", "test-key")
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.delenv("QDRANT_URL", raising=False)
     monkeypatch.delenv("REDIS_URL", raising=False)
-    monkeypatch.delenv("PROMPT_REGISTRY_ENABLED", raising=False)
-    monkeypatch.delenv("PUBLIC_SKILLS_ENABLED", raising=False)
-    from app.composition import build_container
-
-    container = await build_container()
-    try:
-        assert container.backplane is None
-        assert container.task_queue is None
-        assert container.prompt_registry is None
-        assert container.orchestrator._sessions._main_factory.capability_registry is None
-        assert container.orchestrator._sessions._main_factory.buyer_skill_store is not None
-    finally:
-        await container.shutdown()
 
 
-async def test_local_runtime_does_not_create_optional_harness(monkeypatch, tmp_path):
-    monkeypatch.setenv("LLM_API_KEY", "test-key")
-    monkeypatch.setenv("DATA_DIR", str(tmp_path))
-    monkeypatch.delenv("HARNESS_ENABLED", raising=False)
-    from app.composition import build_container
-
-    container = await build_container()
-    try:
-        factory = container.orchestrator._sessions._main_factory
-        assert container.settings.harness_enabled is False
-        assert factory._sequencing is None
-        assert factory._loop_detector is None
-        assert factory._search_factory._loop_detector is None
-        assert factory._trade_factory._loop_detector is None
-    finally:
-        await container.shutdown()
-
-
-def test_local_runtime_defaults_to_single_process(monkeypatch, tmp_path):
-    monkeypatch.setenv("LLM_API_KEY", "test-key")
-    monkeypatch.setenv("DATA_DIR", str(tmp_path))
-    monkeypatch.delenv("REDIS_URL", raising=False)
-    monkeypatch.delenv("QUEUE_ENABLED", raising=False)
-    monkeypatch.delenv("SEMANTIC_CACHE_ENABLED", raising=False)
-    monkeypatch.delenv("QUEUE_PRIORITY_ENABLED", raising=False)
-    monkeypatch.delenv("PROMPT_REGISTRY_ENABLED", raising=False)
-    monkeypatch.delenv("PUBLIC_SKILLS_ENABLED", raising=False)
-    monkeypatch.delenv("HARNESS_ENABLED", raising=False)
-    monkeypatch.delenv("RERANKER_MODE", raising=False)
-
+def test_core_settings_keep_local_qdrant_and_no_extension_switches(monkeypatch, tmp_path):
+    _core_environment(monkeypatch, tmp_path)
     settings = load_settings()
-
-    assert settings.redis_url == ""
-    assert settings.queue_enabled is False
-    assert settings.semantic_cache_enabled is False
-    assert settings.queue_priority_enabled is False
-    assert settings.prompt_registry_enabled is False
-    assert settings.public_skills_enabled is False
-    assert settings.harness_enabled is False
-    assert settings.reranker_mode == "disabled"
+    assert settings.qdrant_url == ""
+    assert settings.data_dir == tmp_path
+    for name in ("redis_url", "queue_enabled", "semantic_cache_enabled",
+                 "prompt_registry_enabled", "public_skills_enabled",
+                 "harness_enabled", "reranker_mode", "tavily_api_key"):
+        assert not hasattr(settings, name), f"扩展配置仍暴露在 Settings: {name}"
 
 
-def test_redis_runtime_remains_opt_in(monkeypatch, tmp_path):
-    monkeypatch.setenv("LLM_API_KEY", "test-key")
-    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+async def test_core_container_does_not_expose_extension_services(monkeypatch, tmp_path):
+    _core_environment(monkeypatch, tmp_path)
+    from app.composition import build_container
+    container = await build_container()
+    try:
+        for name in ("cache", "semantic_cache", "task_queue", "backplane", "prompt_registry"):
+            assert not hasattr(container, name), f"核心容器仍暴露扩展服务: {name}"
+        factory = container.orchestrator._sessions._main_factory
+        for name in ("capability_registry", "skill_catalog_mode", "_sequencing", "_loop_detector"):
+            assert not hasattr(factory, name), f"主 Agent 工厂仍暴露扩展接线: {name}"
+        assert getattr(factory, "buyer_skill_store", None) is not None
+    finally:
+        await container.shutdown()
+
+
+def test_core_settings_ignore_legacy_extension_environment(monkeypatch, tmp_path):
+    _core_environment(monkeypatch, tmp_path)
     monkeypatch.setenv("REDIS_URL", "redis://127.0.0.1:6379/0")
     monkeypatch.setenv("QUEUE_ENABLED", "1")
-    monkeypatch.setenv("SEMANTIC_CACHE_ENABLED", "1")
-    monkeypatch.setenv("QUEUE_PRIORITY_ENABLED", "1")
     monkeypatch.setenv("PROMPT_REGISTRY_ENABLED", "1")
     monkeypatch.setenv("PUBLIC_SKILLS_ENABLED", "1")
-
+    monkeypatch.setenv("HARNESS_ENABLED", "1")
     settings = load_settings()
-
-    assert settings.redis_url.startswith("redis://")
-    assert settings.queue_enabled is True
-    assert settings.semantic_cache_enabled is True
-    assert settings.queue_priority_enabled is True
-    assert settings.prompt_registry_enabled is True
-    assert settings.public_skills_enabled is True
+    assert settings.qdrant_url == ""
+    for name in ("redis_url", "queue_enabled", "prompt_registry_enabled",
+                 "public_skills_enabled", "harness_enabled"):
+        assert not hasattr(settings, name), f"旧环境变量重新暴露扩展配置: {name}"
