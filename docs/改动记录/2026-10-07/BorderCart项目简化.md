@@ -69,6 +69,6 @@
 ## GitHub 发布
 
 - 已创建公开仓库：[1saachen/bordercart-ai-agent](https://github.com/1saachen/bordercart-ai-agent)。
-- 上传分支：`main`；远端提交 SHA：`d067311cbf32d0cd5b66e196fb25d5c981d41f5a`，与本地简化版 `HEAD` 一致。
+- 上传分支：`main`；核心简化版提交为 `d067311cbf32d0cd5b66e196fb25d5c981d41f5a`，随后追加发布记录提交 `9bf7e39`；当前远端 `main` 指向后者。
 - 发布前检查确认 `.env`、真实凭据和用户已有未提交文件均未上传；远端 README 可正常读取，`.env` 路径返回 404。
 - 本地 `bordercart` remote 仅用于该仓库推送；原有 `origin` 远程未修改。
