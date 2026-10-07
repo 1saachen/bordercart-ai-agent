@@ -1,5 +1,5 @@
 {
-  "sourceSha256": "78bf13322310c4419b6b71f24e871625923cc08d9a65e7131963e754bfcbcecb",
+  "sourceSha256": "4acb374db8c5bf678ce7b7f4aa1ff4350df70957615d64ac1ba75ed3a1f75a1b",
   "api": {
     "baseUrl": "http://127.0.0.1:18000",
     "healthStatus": 200,
@@ -20,13 +20,15 @@
       "toolObserved": "product_search_tool",
       "terminal": "RUN_FINISHED",
       "productIdCount": 5,
-      "embeddingOnlyStrategyObserved": true
+      "embeddingOnlyStrategyObserved": true,
+      "sourceSha256MatchesHealth": true
     },
     "categoryKnowledge": {
       "ok": true,
       "toolObserved": "category_insight_tool",
       "terminal": "RUN_FINISHED",
-      "eventTypesObserved": ["TOOL_CALL_START", "TOOL_CALL_ARGS", "TOOL_CALL_RESULT", "RUN_FINISHED"]
+      "eventTypesObserved": ["TOOL_CALL_START", "TOOL_CALL_ARGS", "TOOL_CALL_RESULT", "RUN_FINISHED"],
+      "sourceSha256MatchesHealth": true
     }
   },
   "personalSkill": {
@@ -36,7 +38,8 @@
     "isolatedRead": true,
     "deleted": true,
     "buyerSkillCountBeforeDelete": 1,
+    "otherBuyerIsolated": true,
     "contentRecorded": false
   },
-  "capturedAt": "2026-10-07T17:03:46+08:00"
+  "capturedAt": "2026-10-07T17:34:19+08:00"
 }

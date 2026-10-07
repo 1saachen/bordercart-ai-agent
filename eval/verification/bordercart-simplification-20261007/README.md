@@ -48,13 +48,13 @@ vite v5.4.21 building for production...
 
 本证据未声称模型、Embedding、Qdrant 或 KnowledgeBase 的生产效果已验收。历史启动证据见 [startup-20261003](../startup-20261003/)。
 
-## 当前源码隔离实例
+## 当前源码隔离实例（工作树复测）
 
-- `GET http://127.0.0.1:18000/health`：`status=ok`，SQLite 数据库与交易库，Redis/队列/语义缓存关闭；源码 SHA-256 为 `c3bf9fd0039f0cd877f42a4811c9903e873e921e3da843602cdb507c5c3f4578`。
-- `POST /commerce/intents` 使用有效环境变量完成一次真实商品检索，返回 `P1003`、`P1049` 等结构化商品卡；未在证据中记录密钥或完整买家原文。
-- `GET /commerce/skills?buyer_id=verify-buyer` 返回买家隔离 Skill 目录，当前为空，接口链路正常。
-- AG-UI SSE 实际触发 `category_insight_tool` 和 `product_search_tool`；检索流返回商品 ID 与到手价字段。
-- Personal Skill 创建、同买家列表读取、删除三个 API 操作均成功；原始 Skill 正文不进入本证据。
+- `GET http://127.0.0.1:18000/health`：`status=ok`，SQLite 数据库与交易库，Redis/队列/语义缓存关闭；当前工作树源码 SHA-256 为 `4acb374db8c5bf678ce7b7f4aa1ff4350df70957615d64ac1ba75ed3a1f75a1b`。
+- `POST /commerce/intents` 使用有效环境变量完成一次真实商品检索，返回 8 个结构化商品 ID 并包含到手价；未在证据中记录密钥或完整买家原文。
+- AG-UI SSE 实际触发 `category_insight_tool` 和 `product_search_tool`；两条流均收到 `TOOL_CALL_*`、`RUN_FINISHED`，商品流返回 5 个商品 ID。
+- Personal Skill 创建、同买家列表读取、跨买家隔离、删除四个 API 检查均成功；原始 Skill 正文不进入本证据。
+- 页面 `http://127.0.0.1:5173/` 当前可访问，浏览器 DOM 可见 BorderCart AI 品牌、商品卡和“我的 Skill”编辑入口。
 
 ## 本地服务启动检查
 

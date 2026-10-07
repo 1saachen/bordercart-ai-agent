@@ -42,7 +42,7 @@
 
 - 本轮未把单元测试通过写成模型、Embedding、Qdrant 或 KnowledgeBase 的生产效果结论。
 - 前端页面的真实浏览器截图和完整外部模型链路未在本轮新增；此前启动证据保留在 [startup-20261003](../../../eval/verification/startup-20261003/)。本轮原始验证目录见 [bordercart-simplification-20261007](../../../eval/verification/bordercart-simplification-20261007/README.md)。
-- 当前代码仍保留商品 RAG、KnowledgeBase 和 Personal Skill 实现，需在配置有效时按原启动流程做真实链路复测。
+- 当前源码隔离实例已按有效配置完成商品 RAG、KnowledgeBase 和 Personal Skill 真实链路复测；证据见 [runtime-chain-current.json](../../../eval/verification/bordercart-simplification-20261007/runtime-chain-current.json)。
 
 ## 配置启停与回滚
 
@@ -57,11 +57,11 @@
 - Redis/worker 兼容路径本轮只做默认关闭和文档整理，未删除历史模块。
 - Compose 仍保留 Redis、worker 和 Qdrant 多容器编排作为高级部署入口；本轮只收缩其默认应用配置，不把该模式作为本地最小启动前置条件。
 - 前端浏览器验收已确认 BorderCart AI 品牌、商品卡和 Personal Skill 页面可见；模型/Embedding 的生产效果指标未知。
-- 本地服务检查已完成：前端 `http://127.0.0.1:5173/` 返回 200；隔离 API `http://127.0.0.1:18000/health` 使用当前源码并完成真实商品检索。未强制终止用户已有 API 进程。
+- 当前工作树源码已在隔离 API `http://127.0.0.1:18000/health` 完成健康检查和真实链路；常驻 API `http://127.0.0.1:8000` 属于用户先前启动的旧源码进程，本轮未强制终止或覆盖它。前端 `http://127.0.0.1:5173/` 可访问，页面代理仍指向 8000。
 
 ## 关联版本
 
 - 设计提交：`abff4a4 docs: 记录 BorderCart 项目简化设计`
 - 实现提交：`ed4dcb8 refactor: simplify BorderCart local runtime`
 
-后续收缩改动已提交于 `1f6ad4a refactor: make BorderCart core runtime opt-in`；本轮验证兼容和稳定性修复待提交。
+后续收缩改动已提交于 `1f6ad4a refactor: make BorderCart core runtime opt-in`；验证兼容和稳定性修复提交于 `72382f8 fix: complete current runtime verification`。当前工作树额外保留用户未提交的 Windows 文件存储改动，未纳入本轮提交。
