@@ -7,7 +7,6 @@ from copy import deepcopy
 from agentscope.message import Msg, TextBlock, ToolResultBlock
 from agentscope.middleware import MiddlewareBase
 from app.infrastructure.context import ShoppingContext
-from app.infrastructure.capability_registry import SKILL_TOOL_ALLOWLIST
 
 
 CATALOG_KEY = "skill_catalog"
@@ -51,10 +50,10 @@ def receipt_visible(agent, receipt):
 
 class SkillCatalogMiddleware(MiddlewareBase):
     """在原生 on_reply 追加新输入；水位与消息同属 AgentState，复用会话 CAS/fence。"""
-    def __init__(self, registry, personal_store, available_tools):
+    def __init__(self, registry=None, personal_store=None, available_tools=()):
         self.registry = registry
         self.personal_store = personal_store
-        self.available_tools = frozenset(available_tools) & SKILL_TOOL_ALLOWLIST
+        self.available_tools = frozenset(available_tools)
 
     async def on_reply(self, agent, input_kwargs, next_handler):
         ctx = ShoppingContext.current()
@@ -68,15 +67,9 @@ class SkillCatalogMiddleware(MiddlewareBase):
                 yield event
             return
         ShoppingContext.set_skill_catalog_mode("append_only")
-        if not ctx.capability_digest and self.registry is not None:
-            digest = await asyncio.to_thread(self.registry.bind_session, ctx.shopping_session_id,
-                                            ctx.buyer_id, allow_skill_updates=True)
-            ShoppingContext.set_capability_digest(digest)
         ctx = ShoppingContext.current()
-        public = await asyncio.to_thread(self.registry.metadata, available_tools=self.available_tools,
-                                         expected_digest=ctx.capability_digest) if self.registry else []
         personal = await asyncio.to_thread(self.personal_store.list, ctx.buyer_id) if self.personal_store else []
-        snapshot = catalog_snapshot(public, personal)
+        snapshot = catalog_snapshot([], personal)
         previous = deepcopy(agent.state.middle_context.get(CATALOG_KEY, {}))
         if previous.get("buyer_id", ctx.buyer_id) != ctx.buyer_id:
             raise ValueError("Skill 目录水位不属于当前买家")
@@ -107,10 +100,6 @@ class SkillCatalogMiddleware(MiddlewareBase):
         ctx = ShoppingContext.current()
         state = agent.state.middle_context.get(CATALOG_KEY, {})
         if ctx and state.get("mode") == "append_only":
-            if self.registry:
-                bound = await asyncio.to_thread(self.registry.bind_session, ctx.shopping_session_id, ctx.buyer_id)
-                if bound != ctx.capability_digest:
-                    raise ValueError("本轮 Skill 资料版本变化，请重试")
             messages = agent.state.context
             boundary = next((i for i, m in enumerate(messages) if m.id == state.get("user_message_id")), len(messages))
             active = []
@@ -135,8 +124,7 @@ class SkillCatalogMiddleware(MiddlewareBase):
                 if item["id"].startswith("personal-"):
                     loaded = await asyncio.to_thread(self.personal_store.load, ctx.buyer_id, item["id"], item["version"])
                 else:
-                    loaded = await asyncio.to_thread(self.registry.load_skill, item["id"], item["version"],
-                        available_tools=self.available_tools, expected_digest=ctx.capability_digest, require_current=True)
+                    raise ValueError("公共 Skill 不属于核心版")
                 if loaded["content_hash"] != item["contentHash"]:
                     raise ValueError("本轮 Skill 正文 hash 已失效")
         return await next_handler(**input_kwargs)

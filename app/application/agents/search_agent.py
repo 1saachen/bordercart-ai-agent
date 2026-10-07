@@ -2,9 +2,8 @@
 """SearchAgent
 
 跨境商品检索专家。基于 AgentScope 2.0 Agent：
-    工具集：product_search_tool（embedding+rerank 二阶段召回）
+    工具集：product_search_tool（Embedding 商品召回）
           category_insight_tool（品类洞察 RAG，选购常识）
-          web_search_tool（可选，跨境政策兜底）
 
 对外通过 task_dispatch 工具被 MainAgent 调度（SubAgent as Tool 模式）。
 每次调度新建独立实例：2.0 的对话上下文内建于 AgentState，独立实例天然上下文隔离。
@@ -21,7 +20,6 @@ from app.application.agents.context_policy import build_context_config
 from app.application.prompts.loader import load_prompts
 from app.application.tools.category_insight_tool import build_category_insight_tool
 from app.application.tools.product_search_tool import build_product_search_tool
-from app.application.tools.web_search_tool import build_web_search_tool
 from app.application.tools.conversation_fact_lookup import build_conversation_fact_lookup
 from app.infrastructure.persistence.context_evidence import ContextEvidenceStore
 from app.application.usecases.catalog_search import CatalogSearchUseCase
@@ -35,9 +33,6 @@ from app.infrastructure.resilience import (
 )
 from app.infrastructure.settings import Settings
 from app.infrastructure.tracing import build_agent_middlewares
-from app.application.harness.assertions import SequencingTracker
-from app.application.harness.loop_detector import LoopDetector
-from app.infrastructure.harness_middleware import HarnessToolMiddleware
 
 
 class SearchAgentFactory:
@@ -58,24 +53,13 @@ class SearchAgentFactory:
         # 闸门由组装根下发，三个工厂必须共用同一个，否则各限一份等于没限
         self._throttle = throttle
         self.evidence_store = ContextEvidenceStore(settings.data_dir / "context_evidence.db")
-        self.bind_harness(
-            SequencingTracker() if settings.harness_enabled else None,
-            LoopDetector(repeat_threshold=settings.loop_repeat_threshold) if settings.harness_enabled else None,
-        )
-
-    def bind_harness(self, sequencing, loop_detector) -> None:
-        """主 Agent 和子 Agent 共用会话护栏，避免派发后重新计数。"""
-        self._sequencing, self._loop_detector = sequencing, loop_detector
-
     def _resilience(self) -> list:
-        chain = [HarnessToolMiddleware(sequencing=self._sequencing,
-            loop_detector=self._loop_detector, bus=self._bus)] if self._settings.harness_enabled else []
-        return [*chain, ToolResilienceMiddleware(self._circuit_registry, self._bus)]
+        return [ToolResilienceMiddleware(self._circuit_registry, self._bus)]
 
     def build_tools(self) -> list[FunctionTool]:
         """SearchAgent 的业务工具集，MainAgent 单干时持有同一批（均带超时+熔断保护）。
 
-        web_search_tool 按"有 TAVILY_API_KEY 才注册"设计，未配置时 Agent 看不到它。
+        只注册本地商品索引、KnowledgeBase 和会话事实查询。
         """
         tools = [
             FunctionTool(
@@ -95,14 +79,6 @@ class SearchAgentFactory:
         ]
         tools.append(FunctionTool(build_conversation_fact_lookup(self.evidence_store, mode=self._settings.context_lookup_mode), is_read_only=True,
                                   middlewares=self._resilience()))
-        if self._settings.tavily_api_key:
-            tools.append(
-                FunctionTool(
-                    build_web_search_tool(self._settings, self._bus),
-                    is_read_only=True,
-                    middlewares=self._resilience(),
-                ),
-            )
         return tools
 
     def build(self) -> Agent:

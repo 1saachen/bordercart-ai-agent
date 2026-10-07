@@ -34,20 +34,17 @@ from app.application.agents.context_policy import build_context_config
 from app.application.agents.permissions import allow_business_tools
 from app.application.agents.search_agent import SearchAgentFactory
 from app.application.agents.trade_agent import TradeAgentFactory
-from app.application.harness.assertions import SequencingTracker
-from app.application.harness.loop_detector import LoopDetector
 from app.application.memory.preference_selector import PreferenceSelector
 from app.application.prompts.loader import load_prompts
 from app.application.tools.forget_preference_tool import build_forget_preference_tool
 from app.application.tools.remember_preference_tool import build_remember_preference_tool
 from app.application.tools.update_preference_tool import build_update_preference_tool
 from app.application.tools.task_dispatch_tool import build_task_dispatch_tool
-from app.application.tools.capability_tools import build_capability_tools, capability_hint, STABLE_CAPABILITY_POLICY
+from app.application.tools.capability_tools import build_capability_tools, STABLE_CAPABILITY_POLICY
 from app.application.agents.personal_skill_context import SkillCatalogMiddleware
 from app.domain.buyer.preference import PreferenceStore
 from app.domain.session.ports.session_store import SessionStore
 from app.infrastructure.eventbus import TradeEventBus
-from app.infrastructure.harness_middleware import HarnessToolMiddleware
 from app.infrastructure.llm import create_chat_model
 from app.infrastructure.throttle import GatewayThrottle
 from app.infrastructure.resilience import (
@@ -55,7 +52,7 @@ from app.infrastructure.resilience import (
     ToolResilienceMiddleware,
 )
 from app.infrastructure.settings import Settings
-from app.infrastructure.tracing import build_agent_middlewares, record_prompt_assignment
+from app.infrastructure.tracing import build_agent_middlewares
 
 logger = logging.getLogger(__name__)
 
@@ -70,10 +67,7 @@ class MainAgentFactory:
         preference_store: PreferenceStore,
         circuit_registry: CircuitBreakerRegistry,
         throttle: GatewayThrottle,
-        sequencing: Optional[SequencingTracker] = None,
-        loop_detector: Optional[LoopDetector] = None,
         preference_selector: Optional[PreferenceSelector] = None,
-        capability_registry=None,
         buyer_skill_store=None,
         shopping_form_store=None,
     ) -> None:
@@ -84,40 +78,14 @@ class MainAgentFactory:
         self._preference_store = preference_store
         self._circuit_registry = circuit_registry
         self._throttle = throttle
-        self._capability_registry = capability_registry
-        self.capability_registry = capability_registry
         self.buyer_skill_store = buyer_skill_store
-        self.skill_catalog_mode = settings.skill_catalog_mode
-        if self.skill_catalog_mode not in {"legacy", "append_only"}:
-            raise ValueError("SKILL_CATALOG_MODE 只支持 legacy / append_only")
+        self.skill_catalog_mode = "append_only"
         self.shopping_form_store = shopping_form_store
         # 与 orchestrator 共用同一个 selector，保证主/子 Agent 的偏好选取口径一致
         self._preference_selector = preference_selector or PreferenceSelector()
-        # 护栏判定器按会话累积状态，须跨 Agent 实例共享（与熔断注册表同理）
-        self._sequencing = (sequencing or SequencingTracker()) if settings.harness_enabled else None
-        self._loop_detector = (loop_detector or LoopDetector(
-            repeat_threshold=settings.loop_repeat_threshold,
-        )) if settings.harness_enabled else None
-        self._search_factory.bind_harness(self._sequencing, self._loop_detector)
-        self._trade_factory.bind_harness(self._sequencing, self._loop_detector)
 
     def _resilience(self) -> list:
-        """工具中间件链。
-
-        洋葱顺序：Harness 在外、Resilience 在内，先检查顺序、再进入超时熔断；
-        返回后比较参数与结果进展。被硬拒的调用不会占用一次熔断名额。
-        """
-        chain: list = []
-        if self._settings.harness_enabled:
-            chain.append(
-                HarnessToolMiddleware(
-                    sequencing=self._sequencing,
-                    loop_detector=self._loop_detector,
-                    bus=self._bus,
-                ),
-            )
-        chain.append(ToolResilienceMiddleware(self._circuit_registry, self._bus))
-        return chain
+        return [ToolResilienceMiddleware(self._circuit_registry, self._bus)]
 
     def _memory_middlewares(self):
         from app.application.agents.tool_confirmation import MemoryPermissionMiddleware
@@ -183,20 +151,12 @@ class MainAgentFactory:
                               "航司名称或买家填写的尺寸不等于已核实的行李政策；缺少航线/舱位信息或商品尺寸证据时继续澄清。"
                               "重量优先级只是本次取舍，不是具体重量上限。表单不写长期记忆，也不能批准记忆或订单操作。")
         skill_middlewares = []
-        if self._capability_registry is not None or self.buyer_skill_store is not None:
+        if self.buyer_skill_store is not None:
             available_tools = {tool.name for tool in tools}
-            if self._capability_registry is None:
-                from app.application.tools.capability_tools import build_capability_tools
-                tools.extend(FunctionTool(tool, is_read_only=True, middlewares=self._resilience())
-                             for tool in build_capability_tools(None, available_tools, self._bus, self.buyer_skill_store))
-            else:
-                system_prompt += "\n\n" + (STABLE_CAPABILITY_POLICY if self.skill_catalog_mode == "append_only"
-                                            else capability_hint(self._capability_registry, available_tools))
-                tools.extend(FunctionTool(tool, is_read_only=True, middlewares=self._resilience())
-                             for tool in build_capability_tools(self._capability_registry, available_tools, self._bus, self.buyer_skill_store))
-                if self.skill_catalog_mode == "append_only":
-                    skill_middlewares.append(SkillCatalogMiddleware(
-                        self._capability_registry, self.buyer_skill_store, available_tools))
+            system_prompt += "\n\n" + STABLE_CAPABILITY_POLICY
+            tools.extend(FunctionTool(tool, is_read_only=True, middlewares=self._resilience())
+                         for tool in build_capability_tools(None, available_tools, self._bus, self.buyer_skill_store))
+            skill_middlewares.append(SkillCatalogMiddleware(None, self.buyer_skill_store, available_tools))
 
         return allow_business_tools(
             ContextAwareAgent(
@@ -225,7 +185,6 @@ class SessionRegistry:
         self._agents: dict[str, Agent] = {}
         self._claims = {}
         self._enforce_owner = enforce_owner
-        self._prompt_registry = prompt_registry
 
     async def get_or_create(self, shopping_session_id: str) -> Agent:
         from app.infrastructure.context import ShoppingContext
@@ -239,17 +198,6 @@ class SessionRegistry:
             mode = getattr(self._main_factory, "skill_catalog_mode", "legacy")
             ShoppingContext.set_skill_catalog_mode(mode)
             # 在恢复 AgentState 之前校验资料版本；变更后阻断旧正文继续参与模型上下文。
-            capabilities = getattr(self._main_factory, "capability_registry", None)
-            if capabilities is not None:
-                import asyncio
-                digest = await asyncio.to_thread(capabilities.bind_session, shopping_session_id, context.buyer_id,
-                                                **({"allow_skill_updates": True} if mode == "append_only" else {}))
-                ShoppingContext.set_capability_digest(digest)
-                record_prompt_assignment()
-            if self._prompt_registry is not None:
-                assignment = await self._prompt_registry.assign(shopping_session_id, context.buyer_id)
-                ShoppingContext.set_prompt_assignment(assignment)
-                record_prompt_assignment()
             previous = self._claims.get(shopping_session_id)
             if shopping_session_id not in self._agents or previous is None or previous.revision != claim.revision:
                 try:

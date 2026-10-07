@@ -43,8 +43,6 @@ from agentscope.message import Msg, UserMsg
 from app.application.agents.main_agent import SessionRegistry
 from app.application.agents.product_candidate_projection import ProductCandidateProjection
 from app.application.agents.selected_skill import SelectedSkill, SELECTION_ERROR, preload_selected_skill
-from app.application.harness.drift_detector import DriftDetector
-from app.application.harness.loop_detector import LoopDetector
 from app.application.memory.preference_selector import (
     PreferenceSelector,
     material_exclusion_tags,
@@ -59,14 +57,11 @@ from app.domain.session.ports.conversation_store import (
     ConversationTurn,
 )
 from app.domain.session.ports.session_store import SessionStore  # noqa: F401 —— 保留类型引用
-from app.infrastructure.cache.semantic_cache import SemanticCache
 from app.infrastructure.context import ShoppingContext, ShoppingContextSnapshot
 from app.infrastructure.eventbus import TradeEventBus, observe_run_events
 from app.infrastructure.budget import init_budget, remember_verified_result, get_budget, rule_fallback_text
 from app.infrastructure.security.output_guard import audit_output
 from app.infrastructure.transient import is_transient_error
-from app.infrastructure.capability_registry import CapabilityVersionChanged
-from app.infrastructure.prompt_registry import PromptContractChanged
 
 from app.infrastructure.operational_metrics import begin_request, finish_request
 
@@ -118,11 +113,9 @@ class MainAgentOrchestrator:
         bus: TradeEventBus,
         preference_store: PreferenceStore,
         conversation_store: Optional[ConversationStore] = None,
-        semantic_cache: Optional[SemanticCache] = None,
+        semantic_cache=None,
         output_guard_enabled: bool = True,
-        loop_detector: Optional[LoopDetector] = None,
         token_budget_total: int = 0,
-        drift_detector: Optional[DriftDetector] = None,
         preference_selector: Optional[PreferenceSelector] = None,
         preference_top_k: int = 5,
         session_lease_factory: Callable[..., Any] | None = None,
@@ -136,11 +129,8 @@ class MainAgentOrchestrator:
         self._bus = bus
         self._preference_store = preference_store
         self._conversation_store = conversation_store
-        self._semantic_cache = semantic_cache
         self._output_guard_enabled = output_guard_enabled
-        self._loop_detector = loop_detector
         self._token_budget_total = token_budget_total
-        self._drift_detector = drift_detector
         # 默认 selector 不带 embedder，退化为“按时间倒序取 top_k”，单测与无凭据环境可直接跑
         self._preference_selector = preference_selector or PreferenceSelector()
         self._preference_top_k = preference_top_k
@@ -239,8 +229,6 @@ class MainAgentOrchestrator:
         started_at = time.monotonic()
         # 本轮 Token 预算（TOKEN_BUDGET_TOTAL=0时为 None，不启用四档降级）
         init_budget(self._token_budget_total)
-        if self._drift_detector is not None:
-            self._drift_detector.start_turn(session_id, intent.raw_query)
         # 开始录事件轨迹（本轮结束后批量入库）
         trace = self._bus.subscribe(session_id) if self._conversation_store else None
         final_text = ""
@@ -283,19 +271,11 @@ class MainAgentOrchestrator:
                 selection_loaded = True
                 selected_event("used", **metadata)
             summary_before = agent.state.summary
-            # 语义缓存：仅首轮（无历史上下文）且非写操作意图时尝试命中，命中则零模型调用
             has_history = bool(agent.state.context)
             trade_state = await self._trade_state_provider(intent.buyer_id, session_id) if self._trade_state_provider else {}
             remember_verified_result("trade", trade_state)
             has_trade_state = bool(trade_state.get("orders") or trade_state.get("pending_confirmations"))
             private_store = getattr(getattr(self._sessions, "_main_factory", None), "buyer_skill_store", None)
-            has_private_skills = bool(await asyncio.to_thread(private_store.list, intent.buyer_id)) if private_store is not None else False
-            use_semantic_cache = use_semantic_cache and not has_trade_state and intent.selected_skill is None and not has_private_skills
-            cached = await self._lookup_cache(intent, has_history) if use_semantic_cache else None
-            if cached is not None:
-                final_text = self._guard_final_text(session_id, cached)
-                self._bus.publish(session_id, "final.result", {"text": final_text})
-                return SubmitIntentOutput(shopping_session_id=session_id, final_text=final_text)
 
             # 每轮用持久偏好重建权威提示；从模型上下文移除旧提示，避免撤回后旧提示复活。
             append_skills = getattr(getattr(self._sessions, "_main_factory", None),
@@ -332,19 +312,12 @@ class MainAgentOrchestrator:
             with observe_run_events(collect_candidates):
                 final_text = await self._reply_with_retry(session_id, agent, inputs)
             final_text = self._guard_final_text(session_id, final_text)
-            await self._check_drift(session_id)
-
             self._publish_compression(session_id, agent, summary_before)
             self._bus.publish(session_id, "final.result", {"text": final_text})
-            if use_semantic_cache:
-                await self._remember_cache(intent, final_text, has_history)
             return SubmitIntentOutput(shopping_session_id=session_id, final_text=final_text)
         except ContextCapacityError:
             final_text="本次比较的内容超过安全上下文容量。原始记录已保留，请缩小商品范围或分批比较；不会自动重放交易操作。"
             return SubmitIntentOutput(shopping_session_id=session_id,final_text=final_text,error=final_text,error_code="CONTEXT_CAPACITY_EXCEEDED")
-        except (CapabilityVersionChanged, PromptContractChanged):
-            final_text="选购环境已更新，旧记录仍保留。请在新会话中继续本次需求。"
-            return SubmitIntentOutput(shopping_session_id=session_id,final_text=final_text,error=final_text,error_code="SESSION_VERSION_CHANGED")
         except asyncio.CancelledError:
             if not selection_loaded:
                 selected_event("error", error="所选方案读取已中断，请重新选择后重试。")
@@ -392,10 +365,6 @@ class MainAgentOrchestrator:
             finally:
                 if trace is not None:
                     self._bus.unsubscribe(session_id, trace)
-                if self._loop_detector is not None:
-                    self._loop_detector.reset(session_id)
-                if self._drift_detector is not None:
-                    self._drift_detector.reset(session_id)
                 ShoppingContext.reset(token)
 
     async def _preference_scope(self, buyer_id: str) -> str | None:

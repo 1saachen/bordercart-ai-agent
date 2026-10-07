@@ -36,9 +36,6 @@ from app.infrastructure.resilience import (
 )
 from app.infrastructure.settings import Settings
 from app.infrastructure.tracing import build_agent_middlewares
-from app.application.harness.assertions import SequencingTracker
-from app.application.harness.loop_detector import LoopDetector
-from app.infrastructure.harness_middleware import HarnessToolMiddleware
 
 
 class TradeAgentFactory:
@@ -61,19 +58,8 @@ class TradeAgentFactory:
         self.evidence_store = ContextEvidenceStore(settings.data_dir / "context_evidence.db")
         self._circuit_registry = circuit_registry
         self._throttle = throttle
-        self.bind_harness(
-            SequencingTracker() if settings.harness_enabled else None,
-            LoopDetector(repeat_threshold=settings.loop_repeat_threshold) if settings.harness_enabled else None,
-        )
-
-    def bind_harness(self, sequencing, loop_detector) -> None:
-        """与搜索及主 Agent 共享顺序和循环状态；不改变原生权限审批。"""
-        self._sequencing, self._loop_detector = sequencing, loop_detector
-
     def _resilience(self) -> list:
-        chain = [HarnessToolMiddleware(sequencing=self._sequencing,
-            loop_detector=self._loop_detector, bus=self._bus)] if self._settings.harness_enabled else []
-        return [*chain, ToolResilienceMiddleware(self._circuit_registry, self._bus)]
+        return [ToolResilienceMiddleware(self._circuit_registry, self._bus)]
 
     def build_tools(self) -> list[FunctionTool]:
         """TradeAgent 的业务工具集，MainAgent 单干时持有同一批（均带超时+熔断保护）。"""
