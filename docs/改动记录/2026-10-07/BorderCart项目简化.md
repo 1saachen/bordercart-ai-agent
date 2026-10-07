@@ -65,3 +65,10 @@
 - 实现提交：`ed4dcb8 refactor: simplify BorderCart local runtime`
 
 后续收缩改动已提交于 `1f6ad4a refactor: make BorderCart core runtime opt-in`；验证兼容和稳定性修复提交于 `72382f8 fix: complete current runtime verification`。当前工作树额外保留用户未提交的 Windows 文件存储改动，未纳入本轮提交。
+
+## GitHub 发布
+
+- 已创建公开仓库：[1saachen/bordercart-ai-agent](https://github.com/1saachen/bordercart-ai-agent)。
+- 上传分支：`main`；远端提交 SHA：`d067311cbf32d0cd5b66e196fb25d5c981d41f5a`，与本地简化版 `HEAD` 一致。
+- 发布前检查确认 `.env`、真实凭据和用户已有未提交文件均未上传；远端 README 可正常读取，`.env` 路径返回 404。
+- 本地 `bordercart` remote 仅用于该仓库推送；原有 `origin` 远程未修改。
