@@ -372,6 +372,9 @@ class CatalogSearchUseCase:
             products = await self._product_repo.find_by_ids([hit.product_id for hit in vector_hits])
             by_id = {product.product_id: product for product in products}
             scored = [(hit.score, by_id[hit.product_id]) for hit in vector_hits if hit.product_id in by_id]
+            # Qdrant 对完全相同的向量分数可能返回不同的内部顺序；同分时按权威
+            # 商品 ID 稳定排序，避免关闭 reranker 后结果随索引重建漂移。
+            scored.sort(key=lambda pair: (-pair[0], pair[1].product_id))
             if not adaptive or len(vector_hits) < top_n or top_n >= 256 or sum(self._reject_reason(p, spec) is None for _, p in scored) >= spec.top_k:
                 return scored
             top_n = min(256, top_n*2)

@@ -48,6 +48,12 @@ vite v5.4.21 building for production...
 
 本证据未声称模型、Embedding、Qdrant 或 KnowledgeBase 的生产效果已验收。历史启动证据见 [startup-20261003](../startup-20261003/)。
 
+## 当前源码隔离实例
+
+- `GET http://127.0.0.1:18000/health`：`status=ok`，SQLite 数据库与交易库，Redis/队列/语义缓存关闭；源码 SHA-256 为 `c3bf9fd0039f0cd877f42a4811c9903e873e921e3da843602cdb507c5c3f4578`。
+- `POST /commerce/intents` 使用有效环境变量完成一次真实商品检索，返回 `P1003`、`P1049` 等结构化商品卡；未在证据中记录密钥或完整买家原文。
+- `GET /commerce/skills?buyer_id=verify-buyer` 返回买家隔离 Skill 目录，当前为空，接口链路正常。
+
 ## 本地服务启动检查
 
 前端已在 `http://127.0.0.1:5173/` 返回 HTTP 200，页面 HTML 已包含 `BorderCart AI · 跨境智选助手`。
@@ -59,6 +65,10 @@ API 复用了已占用本地 Qdrant 目录的现有进程（PID 54892），`GET 
 命令：`.venv/Scripts/python.exe -m pytest -q`
 
 结果：`1276 passed, 1 skipped, 60 failed, 85 errors`。失败集中在既有 Windows 编码、Unix `/tmp` 临时目录和外部 Redis/模型前提；本轮只记录原始结果，不将其解释为简化功能通过。
+
+Redis/队列定向复测：`15 passed, 43 skipped`。当前 Redis 为 5.0.14，真实队列所需的 `XAUTOCLAIM` 需要 Redis 6.2+；Windows 无 `AF_UNIX` 的 fixture 已改为本机随机 TCP 端口。
+
+仍未通过的独立既有测试：AG-UI journal 2 项、eval feedback 2 项、Harness Windows 权限/symlink 5 项；未伪造通过。
 
 ## 依赖与配置检查
 

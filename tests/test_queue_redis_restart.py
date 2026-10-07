@@ -4,6 +4,7 @@ import asyncio
 import os
 from pathlib import Path
 import shutil
+import socket as stdlib_socket
 import subprocess
 import tempfile
 
@@ -18,16 +19,29 @@ async def test_sigkill_aof_restart_preserves_pending_and_reclaims_both_streams()
     binary = os.environ.get("GLOBEX_REDIS_SERVER_BIN") or shutil.which("redis-server")
     if not binary:
         pytest.skip("需要官方 redis-server 二进制进行真实进程重启验证")
-    with tempfile.TemporaryDirectory(prefix="gbx-aof-", dir="/tmp") as directory:
-        socket = Path(directory) / "redis.sock"
-        arguments = [binary, "--port", "0", "--unixsocket", str(socket), "--unixsocketperm", "700",
-                     "--dir", directory, "--save", "", "--appendonly", "yes", "--appendfsync", "always"]
+    with tempfile.TemporaryDirectory(prefix="gbx-aof-") as directory:
+        use_unix_socket = hasattr(stdlib_socket, "AF_UNIX")
+        socket_path = Path(directory) / "redis.sock"
+        if use_unix_socket:
+            arguments = [binary, "--port", "0", "--unixsocket", str(socket_path), "--unixsocketperm", "700",
+                         "--dir", directory, "--save", "", "--appendonly", "yes", "--appendfsync", "always"]
+        else:
+            # Windows 没有 AF_UNIX，重启测试使用固定的本机 TCP 端口。
+            listener = stdlib_socket.socket(stdlib_socket.AF_INET, stdlib_socket.SOCK_STREAM)
+            listener.bind(("127.0.0.1", 0))
+            port = listener.getsockname()[1]
+            listener.close()
+            arguments = [binary, "--bind", "127.0.0.1", "--port", str(port),
+                         "--dir", directory, "--save", "", "--appendonly", "yes", "--appendfsync", "always"]
         processes, clients = [], []
         with open(Path(directory) / "redis.log", "w+") as log:
             async def start():
                 process = subprocess.Popen(arguments, stdout=log, stderr=subprocess.STDOUT)
                 processes.append(process)
-                client = aioredis.Redis(unix_socket_path=str(socket), decode_responses=True, socket_timeout=.3)
+                if use_unix_socket:
+                    client = aioredis.Redis(unix_socket_path=str(socket_path), decode_responses=True, socket_timeout=.3, protocol=2)
+                else:
+                    client = aioredis.Redis(host="127.0.0.1", port=port, decode_responses=True, socket_timeout=.3, protocol=2)
                 clients.append(client)
                 async def ready():
                     try:
@@ -35,6 +49,11 @@ async def test_sigkill_aof_restart_preserves_pending_and_reclaims_both_streams()
                     except Exception:
                         return False
                 await eventually(ready)
+                info = await client.info()
+                version_text = str(info.get("redis_version", "0.0"))
+                version = tuple(int(part) for part in version_text.split(".")[:2])
+                if version < (6, 2):
+                    pytest.skip(f"AOF 队列重启测试需要 Redis >= 6.2（当前 {version_text} 不支持 XAUTOCLAIM）")
                 return process, client
 
             try:

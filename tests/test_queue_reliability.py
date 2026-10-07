@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import socket as stdlib_socket
 import subprocess
 import tempfile
 import time
@@ -34,13 +35,26 @@ def isolated_redis_url():
     binary = os.environ.get("GLOBEX_REDIS_SERVER_BIN") or shutil.which("redis-server")
     if not binary:
         pytest.skip("真实 Redis 测试需要 redis-server；设置 GLOBEX_REDIS_SERVER_BIN 后重跑")
-    with tempfile.TemporaryDirectory(prefix="gbx-redis-", dir="/tmp") as directory:
-        socket = Path(directory) / "redis.sock"
+    with tempfile.TemporaryDirectory(prefix="gbx-redis-") as directory:
+        use_unix_socket = hasattr(stdlib_socket, "AF_UNIX")
+        socket_path = Path(directory) / "redis.sock"
+        if use_unix_socket:
+            arguments = [binary, "--port", "0", "--unixsocket", str(socket_path),
+                         "--unixsocketperm", "700", "--save", "", "--appendonly", "no", "--dir", directory]
+            probe = redis.Redis(unix_socket_path=str(socket_path), socket_timeout=0.2, protocol=2)
+            redis_url = f"unix://{socket_path}"
+        else:
+            # Windows 没有 AF_UNIX，改用本机随机 TCP 端口保持测试隔离。
+            listener = stdlib_socket.socket(stdlib_socket.AF_INET, stdlib_socket.SOCK_STREAM)
+            listener.bind(("127.0.0.1", 0))
+            port = listener.getsockname()[1]
+            listener.close()
+            arguments = [binary, "--bind", "127.0.0.1", "--port", str(port),
+                         "--save", "", "--appendonly", "no", "--dir", directory]
+            probe = redis.Redis(host="127.0.0.1", port=port, socket_timeout=0.2, protocol=2)
+            redis_url = f"redis://127.0.0.1:{port}/0"
         with open(Path(directory) / "redis.log", "w+") as log:
-            process = subprocess.Popen([binary, "--port", "0", "--unixsocket", str(socket),
-                "--unixsocketperm", "700", "--save", "", "--appendonly", "no", "--dir", directory],
-                stdout=log, stderr=subprocess.STDOUT)
-            probe = redis.Redis(unix_socket_path=str(socket), socket_timeout=0.2)
+            process = subprocess.Popen(arguments, stdout=log, stderr=subprocess.STDOUT)
             try:
                 deadline = time.monotonic() + 8
                 while True:
@@ -52,7 +66,11 @@ def isolated_redis_url():
                             log.seek(0)
                             pytest.fail(f"真实 Redis 启动失败：{log.read()}")
                         time.sleep(0.02)
-                yield f"unix://{socket}"
+                version_text = str(probe.info().get("redis_version", "0.0"))
+                version = tuple(int(part) for part in version_text.split(".")[:2])
+                if version < (6, 2):
+                    pytest.skip(f"真实队列测试需要 Redis >= 6.2（当前 {version_text} 不支持 XAUTOCLAIM）")
+                yield redis_url
             finally:
                 probe.close()
                 process.terminate()
@@ -65,7 +83,7 @@ def isolated_redis_url():
 
 @pytest.fixture
 async def real_redis(isolated_redis_url):
-    client = aioredis.from_url(isolated_redis_url, decode_responses=True)
+    client = aioredis.from_url(isolated_redis_url, decode_responses=True, protocol=2)
     # 该 URL 来自上面新建的隔离进程，不接受外部服务 URL。
     await client.flushdb()
     yield client
