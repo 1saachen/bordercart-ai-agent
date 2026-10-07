@@ -1,0 +1,45 @@
+# BorderCart AI 简化验证证据
+
+源码分支：`codex/simplify-bordercart`
+
+## 后端默认配置
+
+命令：`.venv/Scripts/python.exe -m pytest tests/test_simplified_runtime.py -q`
+
+原始结果：
+
+```text
+..                                                                       [100%]
+2 passed, 1 warning in 0.10s
+```
+
+## 前端回归
+
+命令：`npm test -- --run`（工作目录 `frontend`）
+
+原始结果摘要：
+
+```text
+Test Files  13 passed (13)
+Tests       128 passed (128)
+```
+
+命令：`npm run build`（工作目录 `frontend`）
+
+原始结果摘要：
+
+```text
+vite v5.4.21 building for production...
+607 modules transformed.
+✓ built in 5.59s
+```
+
+## 定向后端回归限制
+
+命令：`.venv/Scripts/python.exe -m pytest tests/test_simplified_runtime.py tests/test_reranker_client.py tests/test_retrieval.py -q`
+
+结果：16 passed，10 errors。错误均发生在既有 `tests/test_retrieval.py` fixture 读取 `data/catalog-v1.jsonl` 时，Windows 默认编码为 GBK，触发 `UnicodeDecodeError`，没有进入本轮运行时或品牌改动逻辑。后续应单独统一该 fixture 的 UTF-8 读取并复测。
+
+## 外部链路
+
+本证据未声称模型、Embedding、Qdrant 或 KnowledgeBase 的生产效果已验收。历史启动证据见 [startup-20261003](../startup-20261003/)。

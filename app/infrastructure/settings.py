@@ -93,10 +93,10 @@ class Settings:
     database_url: str = ""
     # ---- 四期：Redis 缓存 ----
     redis_url: str = ""  # 空 = 全部缓存能力关闭（零外部依赖）
-    semantic_cache_enabled: bool = True  # Redis 可用时是否开启语义缓存
+    semantic_cache_enabled: bool = False  # 本地模式默认关闭；配置 Redis 与变量后再显式开启
     semantic_cache_threshold: float = 0.95  # 余弦相似度阈值，调低会提高答非所问风险
     # ---- 四期：队列削峰 ----
-    queue_enabled: bool = True  # 需同时配上 REDIS_URL 才生效；否则意图在 API 进程内直跑
+    queue_enabled: bool = False  # 本地模式默认直跑；配置 Redis 与变量后再显式开启
     queue_wait_seconds: float = 300.0  # 同步接口等待队列结果的上限
     worker_concurrency: int = 2  # 单个 worker 同时处理的任务数
     # ---- 五期：运行时护栏（Harness / 安全 / 预算）----
@@ -112,7 +112,7 @@ class Settings:
     preference_relevance_enabled: bool = False  # 向量相关性筛选，每轮多一次 embedding，默认关
     preference_top_k: int = 5  # like 注入上限；dislike（黑名单）不受此限
     preference_subagent_inject: bool = True  # 给检索子 Agent 注入偏好（纯本地拼装，零成本）
-    queue_priority_enabled: bool = True  # 双队列优先级（无 Redis 时自动无效）
+    queue_priority_enabled: bool = False  # 双队列优先级仅用于显式启用 Redis 队列的部署
     queue_large_request_turns: int = 30  # 对话轮数 >= 此值走大请求队列
     # OTLP 信号专用配置优先；认证头不可出现在 Settings 的 repr/日志中。
     otlp_traces_endpoint: str = ""
@@ -214,9 +214,9 @@ def load_settings() -> Settings:
             or f"sqlite+aiosqlite:///{data_dir / 'globex.db'}"
         ),
         redis_url=os.getenv("REDIS_URL", ""),
-        semantic_cache_enabled=os.getenv("SEMANTIC_CACHE_ENABLED", "1") not in ("0", "false", "False"),
+        semantic_cache_enabled=os.getenv("SEMANTIC_CACHE_ENABLED", "0") not in ("0", "false", "False"),
         semantic_cache_threshold=float(os.getenv("SEMANTIC_CACHE_THRESHOLD", "0.95")),
-        queue_enabled=os.getenv("QUEUE_ENABLED", "1") not in ("0", "false", "False"),
+        queue_enabled=os.getenv("QUEUE_ENABLED", "0") not in ("0", "false", "False"),
         queue_wait_seconds=float(os.getenv("QUEUE_WAIT_SECONDS", "300")),
         worker_concurrency=int(os.getenv("WORKER_CONCURRENCY", "2")),
         harness_enabled=os.getenv("HARNESS_ENABLED", "1") not in ("0", "false", "False"),
@@ -230,7 +230,7 @@ def load_settings() -> Settings:
         preference_top_k=int(os.getenv("PREFERENCE_TOP_K", "5")),
         preference_subagent_inject=os.getenv("PREFERENCE_SUBAGENT_INJECT", "1")
         not in ("0", "false", "False"),
-        queue_priority_enabled=os.getenv("QUEUE_PRIORITY_ENABLED", "1") not in ("0", "false", "False"),
+        queue_priority_enabled=os.getenv("QUEUE_PRIORITY_ENABLED", "0") not in ("0", "false", "False"),
         queue_large_request_turns=int(os.getenv("QUEUE_LARGE_REQUEST_TURNS", "30")),
         otlp_traces_endpoint=os.getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", ""),
         otlp_headers=os.getenv("OTEL_EXPORTER_OTLP_HEADERS", ""),

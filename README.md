@@ -1,4 +1,4 @@
-# Globex · 从商品检索到交易确认的电商 Agent
+# BorderCart AI · 从商品检索到交易确认的跨境电商 Agent
 
 一个基于 **AgentScope、AG-UI 和 React** 的全栈 Agent 实战项目，覆盖需求理解、商品检索、方案比较与交易确认。
 
@@ -10,7 +10,7 @@
 
 ## 一次选购，从描述需求开始
 
-你可以先告诉 Globex：
+你可以先告诉 BorderCart AI：
 
 > 预算 300 元以内，帮我找一个寄到中国的轻便背包。
 
@@ -41,7 +41,7 @@ Agent 根据需求调用检索与业务工具，页面随运行过程展示回�
 | 商品检索 | Embedding、Qdrant 稠密向量、应用层 BM25、加权 RRF | 权威目录过滤和补召回；专用 HTTP reranker 精排；未使用 Qdrant 稀疏索引 |
 | 品类知识 | Markdown、AgentScope KnowledgeBase | 管理品类知识，为选购与比较提供参考 |
 | 持久化 | SQLite、本地文件 | 保存会话、运行事件、偏好、Skill、确认单、订单与库存 |
-| 缓存与队列 | Redis、Redis Streams | 缓存、共享限流，以及旧意图接口的异步任务消费 |
+| 可选缓存与队列 | Redis、Redis Streams | 仅在显式启用时提供缓存、共享限流和旧意图异步消费；本地默认关闭 |
 | 可观测性 | OpenTelemetry、OTLP、Langfuse | 关联 API、Agent、模型和工具调用，记录运行追踪与评分 |
 | 测试与评测 | 后端/前端回归测试、自定义评测脚本 | 验证业务行为，评估商品检索、知识检索、Agent 与上下文治理效果 |
 | 构建与部署 | uv、npm、Docker Compose、Nginx | 依赖管理、全栈部署、静态资源服务与 API 反向代理 |
@@ -97,7 +97,7 @@ Agent 根据需求调用检索与业务工具，页面随运行过程展示回�
 启动步骤：
 推荐先使用本机模式：启动一个后端和一个前端。
 
-默认使用 SQLite 与本地 Qdrant，不需要预先部署 MySQL、Redis 或 Langfuse。
+默认使用 SQLite 与本地 Qdrant，不需要预先部署 MySQL、Redis 或 Langfuse。默认 `QUEUE_ENABLED=0`，API 进程内直接执行 Agent；Redis/worker 只用于需要异步削峰的部署。
 
 ### 1. 准备环境
 
@@ -247,11 +247,11 @@ flowchart TD
 | 传输层 | AG-UI 事件流、运行日志、游标重连与历史恢复 |
 | Agent 层 | MainAgent 处理任务，按需派发给 SearchAgent 和 TradeAgent |
 | 业务层 | 检索、确认、订单、库存与偏好的用例和约束 |
-| 基础设施层 | 模型、向量检索、SQLite、Redis 与可观测性适配 |
+| 基础设施层 | 模型、商品 RAG、KnowledgeBase、SQLite 与可选 Redis/可观测性适配 |
 
 简单任务由 MainAgent 直接调用工具；需要任务拆分或上下文隔离时，再使用子 Agent。
 
-当前网页的 AG-UI 请求在 API 进程执行。Redis worker 服务于旧意图接口和异步任务入口，开启队列不会自动把网页请求转交 worker。
+当前网页的 AG-UI 请求在 API 进程执行。默认单进程模式不启动 Redis worker；只有同时配置 `REDIS_URL`、`QUEUE_ENABLED=1` 并另起 worker 时，旧意图接口才会进入 Redis Stream。
 
 更详细的实现说明见[设计演进记录](docs/设计演进记录.md)与[教程实现对齐清单](docs/教程实现对齐清单.md)。
 
@@ -267,7 +267,8 @@ flowchart TD
 | `RERANKER_API_KEY`、`RERANKER_PROTOCOL` | 独立密钥（空时复用 LLM 密钥）；`flat` 或 `dashscope`，必须与接口协议匹配 |
 | `RERANKER_TIMEOUT_SECONDS` | HTTP 精排超时，默认 15 秒 |
 | `QDRANT_URL` | 使用服务端 Qdrant；本地模式可不配置 |
-| `REDIS_URL`、`QUEUE_ENABLED` | Redis 与旧意图队列 |
+| `REDIS_URL`、`QUEUE_ENABLED` | 可选 Redis 与旧意图队列；默认未配置/关闭 |
+| `SEMANTIC_CACHE_ENABLED`、`QUEUE_PRIORITY_ENABLED` | 可选语义缓存和双队列优先级；默认关闭 |
 | `LANGFUSE_BASE_URL`、`LANGFUSE_PUBLIC_KEY`、`LANGFUSE_SECRET_KEY` | 可选运行追踪 |
 | `HYBRID_RECALL_ENABLED` | 应用层 BM25 + 稠密向量融合，默认 `0`，收益门禁通过后再开启 |
 | `HYBRID_LEXICAL_WEIGHT`、`HYBRID_VECTOR_WEIGHT`、`RECALL_CANDIDATES` | 融合权重默认 `1 / 1`，候选窗口默认 `32` |
