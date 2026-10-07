@@ -26,6 +26,7 @@
 - `npm test -- --run`（`frontend/`）：13 个测试文件、128 tests passed。
 - `npm run build`（`frontend/`）：Vite production build 成功。
 - `.venv/Scripts/python.exe -m pytest tests/test_simplified_runtime.py tests/test_reranker_client.py tests/test_retrieval.py -q`：16 passed；10 个已有检索 fixture 在 `data/catalog-v1.jsonl` 的 Windows 默认 GBK 读取阶段失败，错误为 `UnicodeDecodeError`，未进入本轮改动逻辑。该失败需要后续单独统一测试文件编码后复测。
+- `.venv/Scripts/python.exe -m pytest -q`：`1276 passed, 1 skipped, 60 failed, 85 errors`。失败/错误主要来自既有 Windows 测试前提：UTF-8 数据和 YAML 被系统 GBK 读取、Redis 测试 fixture 硬编码 Unix `/tmp`、以及需要外部 Redis/模型链路；本轮未修改这些测试或数据文件，不能据此宣称全量回归通过。
 
 ### 真实外部链路与效果验收
 
@@ -42,7 +43,7 @@
 
 ## 未完成项
 
-- 后端全量测试尚未完成；除上述编码失败外，完整 AgentScope/KnowledgeBase 测试需要有效依赖、模型和 Qdrant 数据条件。
+- 后端全量回归存在上述环境相关失败，完整 AgentScope/KnowledgeBase 测试仍需要统一 UTF-8/临时目录兼容并准备有效模型、Redis 和 Qdrant 条件。
 - Redis/worker 兼容路径本轮只做默认关闭和文档整理，未删除历史模块。
 - 前端真实浏览器验收和外部服务效果指标未知。
 

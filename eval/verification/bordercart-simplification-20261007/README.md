@@ -43,3 +43,9 @@ vite v5.4.21 building for production...
 ## 外部链路
 
 本证据未声称模型、Embedding、Qdrant 或 KnowledgeBase 的生产效果已验收。历史启动证据见 [startup-20261003](../startup-20261003/)。
+
+## 全量后端回归
+
+命令：`.venv/Scripts/python.exe -m pytest -q`
+
+结果：`1276 passed, 1 skipped, 60 failed, 85 errors`。失败集中在既有 Windows 编码、Unix `/tmp` 临时目录和外部 Redis/模型前提；本轮只记录原始结果，不将其解释为简化功能通过。
