@@ -46,6 +46,7 @@
 - 后端全量回归存在上述环境相关失败，完整 AgentScope/KnowledgeBase 测试仍需要统一 UTF-8/临时目录兼容并准备有效模型、Redis 和 Qdrant 条件。
 - Redis/worker 兼容路径本轮只做默认关闭和文档整理，未删除历史模块。
 - 前端真实浏览器验收和外部服务效果指标未知。
+- 本地服务检查已完成：前端 `http://127.0.0.1:5173/` 返回 200；复用已有 API 进程 `http://127.0.0.1:8000/health` 返回 `status=ok`，SQLite 正常，Redis 和队列均为 disabled。第二个 API 进程因本地 Qdrant 目录锁按预期退出，未强制终止占用者。
 
 ## 关联版本
 

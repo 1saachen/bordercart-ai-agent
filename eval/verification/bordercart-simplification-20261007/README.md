@@ -44,6 +44,12 @@ vite v5.4.21 building for production...
 
 本证据未声称模型、Embedding、Qdrant 或 KnowledgeBase 的生产效果已验收。历史启动证据见 [startup-20261003](../startup-20261003/)。
 
+## 本地服务启动检查
+
+前端已在 `http://127.0.0.1:5173/` 返回 HTTP 200，页面 HTML 已包含 `BorderCart AI · 跨境智选助手`。
+
+API 复用了已占用本地 Qdrant 目录的现有进程（PID 54892），`GET http://127.0.0.1:8000/health` 返回 `status=ok`、`database=sqlite`、`trade_database=sqlite`、`redis=disabled`、`semantic_cache=false`、`queue=disabled`。尝试重复启动第二个 API 进程时按预期收到 Qdrant `Storage folder data\\qdrant is already accessed by another instance` 错误，因此没有强行终止原进程或删除锁文件。
+
 ## 全量后端回归
 
 命令：`.venv/Scripts/python.exe -m pytest -q`
