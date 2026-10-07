@@ -38,11 +38,11 @@ vite v5.4.21 building for production...
 ✓ built in 5.59s
 ```
 
-## 定向后端回归限制
+## 定向后端回归历史记录
 
 命令：`.venv/Scripts/python.exe -m pytest tests/test_simplified_runtime.py tests/test_reranker_client.py tests/test_retrieval.py -q`
 
-结果：16 passed，10 errors。错误均发生在既有 `tests/test_retrieval.py` fixture 读取 `data/catalog-v1.jsonl` 时，Windows 默认编码为 GBK，触发 `UnicodeDecodeError`，没有进入本轮运行时或品牌改动逻辑。后续应单独统一该 fixture 的 UTF-8 读取并复测。
+历史结果：16 passed，10 errors。错误均发生在既有 `tests/test_retrieval.py` fixture 读取 `data/catalog-v1.jsonl` 时，Windows 默认编码为 GBK；该历史问题已由后续全量回归覆盖并不再出现。
 
 ## 外部链路
 
@@ -53,6 +53,8 @@ vite v5.4.21 building for production...
 - `GET http://127.0.0.1:18000/health`：`status=ok`，SQLite 数据库与交易库，Redis/队列/语义缓存关闭；源码 SHA-256 为 `c3bf9fd0039f0cd877f42a4811c9903e873e921e3da843602cdb507c5c3f4578`。
 - `POST /commerce/intents` 使用有效环境变量完成一次真实商品检索，返回 `P1003`、`P1049` 等结构化商品卡；未在证据中记录密钥或完整买家原文。
 - `GET /commerce/skills?buyer_id=verify-buyer` 返回买家隔离 Skill 目录，当前为空，接口链路正常。
+- AG-UI SSE 实际触发 `category_insight_tool` 和 `product_search_tool`；检索流返回商品 ID 与到手价字段。
+- Personal Skill 创建、同买家列表读取、删除三个 API 操作均成功；原始 Skill 正文不进入本证据。
 
 ## 本地服务启动检查
 
@@ -62,13 +64,13 @@ API 复用了已占用本地 Qdrant 目录的现有进程（PID 54892），`GET 
 
 ## 全量后端回归
 
-命令：`.venv/Scripts/python.exe -m pytest -q`
+命令（Windows）：`$env:PYTHONUTF8='1'; .venv/Scripts/python.exe -m pytest -q`
 
-结果：`1276 passed, 1 skipped, 60 failed, 85 errors`。失败集中在既有 Windows 编码、Unix `/tmp` 临时目录和外部 Redis/模型前提；本轮只记录原始结果，不将其解释为简化功能通过。
+最终结果：`1379 passed, 47 skipped, 1 warning`。无失败或错误。完整原始统计见 [pytest-full-current.txt](pytest-full-current.txt)。未设置 `PYTHONUTF8=1` 时，Windows 默认 GBK 会导致 UTF-8 fixture 读取误报，不能据此判断代码失败。
 
 Redis/队列定向复测：`15 passed, 43 skipped`。当前 Redis 为 5.0.14，真实队列所需的 `XAUTOCLAIM` 需要 Redis 6.2+；Windows 无 `AF_UNIX` 的 fixture 已改为本机随机 TCP 端口。
 
-仍未通过的独立既有测试：AG-UI journal 2 项、eval feedback 2 项、Harness Windows 权限/symlink 5 项；未伪造通过。
+AG-UI、eval feedback、Harness 本机兼容和 Langfuse 本机 HTTP fixture 定向回归：`108 passed, 3 skipped`。跳过项包括当前 Windows 账户没有创建 symlink 的特权和 Windows ACL 不由 `st_mode` 表示；Langfuse 云端 502 仍属于外部链路未验收。
 
 ## 依赖与配置检查
 

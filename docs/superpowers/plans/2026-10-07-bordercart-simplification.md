@@ -31,7 +31,7 @@
 - Modify: `app/presentation/server.py`
 - Test: `tests/test_simplified_runtime.py`
 
-- [ ] **Step 1: 写失败测试，锁定 Redis 未配置时的行为**
+- [x] **Step 1: 写失败测试，锁定 Redis 未配置时的行为**
 
 ```python
 def test_local_runtime_does_not_require_redis(monkeypatch):
@@ -44,17 +44,17 @@ def test_local_runtime_does_not_require_redis(monkeypatch):
     assert container.settings.queue_enabled is False
 ```
 
-- [ ] **Step 2: 运行测试确认当前行为不满足或记录现有差异**
+- [x] **Step 2: 运行测试确认当前行为不满足或记录现有差异**
 
 运行：`pytest tests/test_simplified_runtime.py::test_local_runtime_does_not_require_redis -q`
 
 预期：在当前实现不满足时失败；若组合根已满足，则记录为基线通过并继续补齐健康接口断言。
 
-- [ ] **Step 3: 实现最小配置和组合根改动**
+- [x] **Step 3: 实现最小配置和组合根改动**
 
 保持 `REDIS_URL`、`QUEUE_ENABLED` 兼容读取；当队列未显式开启或 Redis URL 为空时，创建进程内队列/事件实现或现有同步降级，不实例化 Redis Stream、Redis backplane、Redis cache 的强依赖。不要删除核心 Agent 工厂、Qdrant、KnowledgeBase 或 Skill 服务。
 
-- [ ] **Step 4: 补充健康接口测试**
+- [x] **Step 4: 补充健康接口测试**
 
 ```python
 def test_health_marks_redis_optional(monkeypatch):
@@ -70,7 +70,7 @@ def test_health_marks_redis_optional(monkeypatch):
 
 若项目测试客户端不是上述接口，按现有 FastAPI 测试 fixture 使用 `httpx.AsyncClient`，断言保持相同语义。
 
-- [ ] **Step 5: 运行后端定向测试并提交**
+- [x] **Step 5: 运行后端定向测试并提交**
 
 运行：`pytest tests/test_simplified_runtime.py -q`
 
@@ -85,27 +85,27 @@ def test_health_marks_redis_optional(monkeypatch):
 - Modify: `app/infrastructure/harness_middleware.py`
 - Test: 现有 Agent 调度和流式测试，必要时新增 `tests/test_core_agent_wiring.py`
 
-- [ ] **Step 1: 盘点真实调用方和测试依赖**
+- [x] **Step 1: 盘点真实调用方和测试依赖**
 
 运行：`rg -n "LoopDetector|DriftDetector|PromptRegistry|CapabilityRegistry|semantic_cache|rerank|harness" app tests`
 
 把仍被商品 RAG、KnowledgeBase、Personal Skill、确认流程直接需要的对象列为保留项；只对默认组合根做可选注入，不物理删除仍被测试引用的模块。
 
-- [ ] **Step 2: 写核心接线回归测试**
+- [x] **Step 2: 写核心接线回归测试**
 
 测试必须验证：`MainAgent` 可以构造搜索和交易工厂；`SearchAgent` 仍收到 `KnowledgeBase`；Personal Skill 上下文仍可选加载；交易确认仍存在。测试使用 fake model/tool，不调用真实外部服务。
 
-- [ ] **Step 3: 实现默认关闭非核心治理**
+- [x] **Step 3: 实现默认关闭非核心治理**
 
 将复杂缓存、Prompt/Capability 注册、Drift/Loop 检测、独立 reranker 和观测接线改为显式开关；默认关闭时传入 `None` 或现有轻量实现。保留 AgentScope 的 `Msg`、工具调用、流式事件和确认 API。
 
-- [ ] **Step 4: 运行 Agent 核心回归**
+- [x] **Step 4: 运行 Agent 核心回归**
 
 运行：`pytest tests -q -k "agent or search or skill or knowledge or confirmation"`
 
 预期：核心路径通过；若历史测试依赖高级设施，单独标注为可选兼容测试，不改变核心默认链路。
 
-- [ ] **Step 5: 提交治理接线变更**
+- [x] **Step 5: 提交治理接线变更**
 
 提交：`git add app tests && git commit -m "refactor: keep core agent path lightweight"`
 
@@ -117,21 +117,21 @@ def test_health_marks_redis_optional(monkeypatch):
 - Modify: `frontend/src/components/ContextWorkspace.tsx`
 - Test: `frontend/tests/brand.test.tsx`
 
-- [ ] **Step 1: 写品牌回归测试**
+- [x] **Step 1: 写品牌回归测试**
 
 测试渲染首页后断言出现 `BorderCart AI` 和 `跨境智选助手`，并断言用户可见主标题不再出现 `Globex`；API 字段和组件内部测试标识不纳入替换范围。
 
-- [ ] **Step 2: 运行 Vitest 确认测试先失败**
+- [x] **Step 2: 运行 Vitest 确认测试先失败**
 
 运行：`npm --prefix frontend test -- --run frontend/tests/brand.test.tsx`
 
 预期：当前品牌文案断言失败。
 
-- [ ] **Step 3: 修改页面品牌文案**
+- [x] **Step 3: 修改页面品牌文案**
 
 更新 `<title>`、meta description、品牌标识、首页欢迎语、对话提示和 ContextWorkspace 提示为 BorderCart AI / 跨境智选助手。保留订单、商品、Skill 和恢复功能文案，不新增复杂导航。
 
-- [ ] **Step 4: 运行前端测试和构建**
+- [x] **Step 4: 运行前端测试和构建**
 
 运行：`npm --prefix frontend test -- --run`
 
@@ -139,7 +139,7 @@ def test_health_marks_redis_optional(monkeypatch):
 
 预期：测试和构建通过。
 
-- [ ] **Step 5: 提交品牌改动**
+- [x] **Step 5: 提交品牌改动**
 
 提交：`git add frontend && git commit -m "feat: rename storefront to BorderCart AI"`
 
@@ -150,19 +150,19 @@ def test_health_marks_redis_optional(monkeypatch):
 - Modify: `docker/docker-compose.yaml`（仅当默认文档仍强制 worker/Redis 时）
 - Modify: `package` 或启动脚本（仅当实际入口需要）
 
-- [ ] **Step 1: 以当前真实入口为基准更新文档**
+- [x] **Step 1: 以当前真实入口为基准更新文档**
 
 明确 API、前端、SQLite、本地 Qdrant、模型/Embedding 环境变量的启动方式；说明 Redis/worker 是可选历史接口，不把它们写成默认前置依赖。
 
-- [ ] **Step 2: 添加简化后的架构说明**
+- [x] **Step 2: 添加简化后的架构说明**
 
 用一段短流程说明 `MainAgent -> SearchAgent/TradeAgent`，并标注 SearchAgent 同时使用商品 RAG 与 KnowledgeBase RAG，Personal Skill 按需注入。
 
-- [ ] **Step 3: 添加配置启停和回滚说明**
+- [x] **Step 3: 添加配置启停和回滚说明**
 
 说明删除 `REDIS_URL` 或设置 `QUEUE_ENABLED=0` 会回到单进程模式；恢复旧队列模式只需重新配置原变量并启动 worker。不得写入真实 API key 或数据库内容。
 
-- [ ] **Step 4: 运行文档引用检查**
+- [x] **Step 4: 运行文档引用检查**
 
 运行：`rg -n "Globex|Redis|worker|BorderCart|KnowledgeBase|Personal Skill" README.md frontend/index.html frontend/src app/presentation/server.py`
 
@@ -175,7 +175,7 @@ def test_health_marks_redis_optional(monkeypatch):
 - Create: `docs/改动记录/2026-10-07/BorderCart项目简化.md`
 - Create/modify: `eval/verification/` 原始日志或截图
 
-- [ ] **Step 1: 运行全量后端测试和前端验证**
+- [x] **Step 1: 运行全量后端测试和前端验证**
 
 运行：`pytest -q`
 
@@ -183,19 +183,19 @@ def test_health_marks_redis_optional(monkeypatch):
 
 记录真实命令、退出码、失败样本和未验证项。
 
-- [ ] **Step 2: 启动 API 和前端单进程模式**
+- [x] **Step 2: 启动 API 和前端单进程模式**
 
 使用现有 `.env`，启动 API 与 Vite；访问 `http://127.0.0.1:8000/health` 和 `http://127.0.0.1:5173/`。确认 Redis 未配置时 API 仍 ready，Qdrant 使用本地 `data/qdrant`。
 
-- [ ] **Step 3: 验证核心业务链路**
+- [x] **Step 3: 验证核心业务链路**
 
 验证商品向量召回、KnowledgeBase 品类知识召回、Personal Skill 创建/选择/注入、MainAgent 到 SearchAgent/TradeAgent 的协作和交易确认。真实外部模型/Embedding 失败时记录原始错误，不把代码测试结果写成外部服务成功。
 
-- [ ] **Step 4: 编写当天改动记录**
+- [x] **Step 4: 编写当天改动记录**
 
 记录需求、设计与实现、回归测试、真实外部链路、效果验收、配置启停、回滚、未完成项、关联 commit；链接 `eval/verification/` 下原始证据。
 
-- [ ] **Step 5: 最终检查并提交**
+- [x] **Step 5: 最终检查并提交**
 
 运行：`git diff --check`、`git status --short --branch`、`git log --oneline -5`。
 

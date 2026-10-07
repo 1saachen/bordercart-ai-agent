@@ -1,6 +1,7 @@
 """评测器自身也要验收：缺失成本、伪通过、场景配对与 HTML 注入。"""
 import copy
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -54,7 +55,11 @@ def test_synthetic_trace_is_durable_private_and_report_link_is_local(tmp_path):
     events = [json.loads(line) for line in file.read_text().splitlines()]
     assert [event['sequence'] for event in events] == [1, 2]
     assert events[0]['payload']['state'] == 'error'
-    assert file.stat().st_mode & 0o777 == 0o600
+    if os.name == 'nt':
+        # Windows ACL 不通过 st_mode 暴露 POSIX 0600 位；本测试不伪装成已验证 ACL。
+        pytest.skip('Windows ACL 不由 st_mode 表示，需在具备 icacls 校验的环境单独验收')
+    else:
+        assert file.stat().st_mode & 0o777 == 0o600
     samples = rows();samples[0]['evidence_trace'] = 'traces/a-current-0.jsonl'
     samples[1]['evidence_trace'] = 'https://invalid.example/unsafe'
     render(tmp_path, manifest(), samples)
@@ -243,7 +248,10 @@ def test_cross_version_comparison_keeps_distinct_private_trace_files(tmp_path):
     for row, original in zip(linked, ('a', 'b')):
         file = out/row['evidence_trace']
         assert json.loads(file.read_text()) == {'source':original}
-        assert file.stat().st_mode & 0o777 == 0o600
+        if os.name == 'nt':
+            pytest.skip('Windows ACL 不由 st_mode 表示，需在具备 icacls 校验的环境单独验收')
+        else:
+            assert file.stat().st_mode & 0o777 == 0o600
         assert 'href="'+row['evidence_trace']+'"' in (out/'report.html').read_text()
 
 
@@ -255,7 +263,13 @@ def test_cross_version_comparison_rejects_missing_or_external_traces(tmp_path, r
     for name in ('a', 'b'):
         path = tmp_path/name
         (path/'traces').mkdir(parents=True)
-        (path/'traces/escape.jsonl').symlink_to(outside)
+        if reference == 'traces/escape.jsonl':
+            try:
+                (path/'traces/escape.jsonl').symlink_to(outside)
+            except OSError as error:
+                if os.name == 'nt' and getattr(error, 'winerror', None) == 1314:
+                    pytest.skip('当前 Windows 账户没有创建 symlink 的权限')
+                raise
         (path/'manifest.json').write_text(json.dumps(manifest()))
         samples = rows()
         samples[0]['evidence_trace'] = reference

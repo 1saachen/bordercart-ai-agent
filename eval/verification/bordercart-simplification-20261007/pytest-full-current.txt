@@ -1,0 +1,13 @@
+命令（PowerShell，工作目录 E:\Learning\agent\globex-agent）：
+$env:PYTHONUTF8='1'; .venv\Scripts\python.exe -m pytest -q --tb=short
+
+结果：
+============================== warnings summary ===============================
+.venv\Lib\site-packages\fastapi\testclient.py:1
+  E:\Learning\agent\globex-agent\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+1379 passed, 47 skipped, 1 warning in 256.10s (0:04:16)
+
+说明：Windows 下必须设置 PYTHONUTF8=1；否则 UTF-8 测试 fixture 可能被系统默认 GBK 误读。47 个跳过项包含 Redis 5.0 不支持 XAUTOCLAIM、当前账户无 symlink 特权，以及 Windows ACL 不由 st_mode 表示的证据权限断言。

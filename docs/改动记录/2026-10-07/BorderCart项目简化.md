@@ -31,17 +31,17 @@
 - `npm test -- --run`（`frontend/`）：13 个测试文件、128 tests passed。
 - `npm run build`（`frontend/`）：Vite production build 成功。
 - `.venv/Scripts/python.exe -m pytest tests/test_simplified_runtime.py tests/test_reranker_client.py tests/test_retrieval.py -q`：16 passed；10 个已有检索 fixture 在 `data/catalog-v1.jsonl` 的 Windows 默认 GBK 读取阶段失败，错误为 `UnicodeDecodeError`，未进入本轮改动逻辑。该失败需要后续单独统一测试文件编码后复测。
-- `.venv/Scripts/python.exe -m pytest -q`：`1276 passed, 1 skipped, 60 failed, 85 errors`。失败/错误主要来自既有 Windows 测试前提：UTF-8 数据和 YAML 被系统 GBK 读取、Redis 测试 fixture 硬编码 Unix `/tmp`、以及需要外部 Redis/模型链路；本轮未修改这些测试或数据文件，不能据此宣称全量回归通过。
+- Windows 全量回归需先设置 `$env:PYTHONUTF8='1'`（仓库中的 UTF-8 fixture 在未设置时会被 Windows 默认 GBK 误读）；`.venv/Scripts/python.exe -m pytest -q --tb=short`：`1379 passed, 47 skipped, 1 warning`。原始统计见 [pytest-full-current.txt](../../../eval/verification/bordercart-simplification-20261007/pytest-full-current.txt)。跳过项来自当前 Redis 5.0 不支持 `XAUTOCLAIM`、Windows 账户没有创建 symlink 的特权，以及 Windows ACL 不由 `st_mode` 表示的权限断言；没有失败或错误。
 - Windows Redis/队列定向回归：`15 passed, 43 skipped`。当前 `E:\Redis\redis-server.exe` 为 Redis 5.0.14，不支持项目所需的 `XAUTOCLAIM`；跳过发生在真实版本检测后。
-- 最新隔离 API（端口 `18000`，独立临时数据目录）`GET /health`：`status=ok`、SQLite、本地模式、Redis/队列/语义缓存关闭，源码指纹为 `c3bf9fd0039f0cd877f42a4811c9903e873e921e3da843602cdb507c5c3f4578`。
-- 最新隔离 API `POST /commerce/intents` 真实检索返回 `P1003`、`P1049` 等结构化商品卡和到手价；`GET /commerce/skills?buyer_id=verify-buyer` 返回买家隔离 Skill 列表（当前为空）。未记录密钥或完整买家原文。
-- AG-UI journal 两个测试、eval feedback 两个测试仍失败；Harness Windows 文件权限/symlink 五个测试受系统差异影响，均未改成假通过。
+- AG-UI、eval feedback、Harness 本机兼容和 Langfuse 本机 HTTP fixture 定向回归：`108 passed, 3 skipped`；新增修复覆盖 SQLite 短租约、回环 HTTP 绕过系统代理、跨平台 evidence 链接和 Windows 权限语义。
+- 当前源码隔离 API（端口 `18000`，独立临时数据目录）的健康检查和真实链路结果见 [health-current.json](../../../eval/verification/bordercart-simplification-20261007/health-current.json) 与 [runtime-chain-current.json](../../../eval/verification/bordercart-simplification-20261007/runtime-chain-current.json)。证据只保留状态、源码指纹和布尔检查，不记录密钥、Skill 正文或买家原文。
+- Langfuse 云端真实链路仍未验收：当前网络对外服务返回 `502`，该限制与本地 Langfuse HTTP fixture 测试分开记录，不影响本地代码回归结论。
 - `pyproject.toml` 与 `uv.lock` 使用 Python `tomllib` 解析通过；当前环境没有 `uv`，且尝试安装时 pip 代理不可用，因此没有重新生成锁文件。
 
 ### 真实外部链路与效果验收
 
 - 本轮未把单元测试通过写成模型、Embedding、Qdrant 或 KnowledgeBase 的生产效果结论。
-- 前端页面的真实浏览器截图和完整外部模型链路未在本轮新增；此前启动证据保留在 [startup-20261003](../../../eval/verification/startup-20261003/)。
+- 前端页面的真实浏览器截图和完整外部模型链路未在本轮新增；此前启动证据保留在 [startup-20261003](../../../eval/verification/startup-20261003/)。本轮原始验证目录见 [bordercart-simplification-20261007](../../../eval/verification/bordercart-simplification-20261007/README.md)。
 - 当前代码仍保留商品 RAG、KnowledgeBase 和 Personal Skill 实现，需在配置有效时按原启动流程做真实链路复测。
 
 ## 配置启停与回滚
@@ -53,10 +53,10 @@
 
 ## 未完成项
 
-- 后端全量回归存在上述环境相关失败，完整 AgentScope/KnowledgeBase 测试仍需要统一 UTF-8/临时目录兼容并准备有效模型、Redis 和 Qdrant 条件。
+- 后端全量回归已通过；真实 Redis 6.2+ 队列链路和 Langfuse 云端效果仍需相应外部环境才能验收。
 - Redis/worker 兼容路径本轮只做默认关闭和文档整理，未删除历史模块。
 - Compose 仍保留 Redis、worker 和 Qdrant 多容器编排作为高级部署入口；本轮只收缩其默认应用配置，不把该模式作为本地最小启动前置条件。
-- 前端浏览器验收已确认 BorderCart AI 品牌、商品卡和 Personal Skill 页面可见；外部服务效果指标未知。
+- 前端浏览器验收已确认 BorderCart AI 品牌、商品卡和 Personal Skill 页面可见；模型/Embedding 的生产效果指标未知。
 - 本地服务检查已完成：前端 `http://127.0.0.1:5173/` 返回 200；隔离 API `http://127.0.0.1:18000/health` 使用当前源码并完成真实商品检索。未强制终止用户已有 API 进程。
 
 ## 关联版本
@@ -64,4 +64,4 @@
 - 设计提交：`abff4a4 docs: 记录 BorderCart 项目简化设计`
 - 实现提交：`ed4dcb8 refactor: simplify BorderCart local runtime`
 
-后续收缩改动已提交于 `1f6ad4a refactor: make BorderCart core runtime opt-in`；本轮 Windows Redis fixture 兼容和稳定排序修复待提交。
+后续收缩改动已提交于 `1f6ad4a refactor: make BorderCart core runtime opt-in`；本轮验证兼容和稳定性修复待提交。

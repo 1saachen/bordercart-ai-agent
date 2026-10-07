@@ -10,6 +10,7 @@ import math
 from pathlib import Path
 import re
 import time
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -209,9 +210,13 @@ def verify(config: LangfuseConfig, *, trace_id: str = "", project_id: str = "",
             or type(score_value) not in (int, float) or not math.isfinite(score_value)))):
         return {**report, "status": "ARGUMENTS_INVALID"}
     try:
+        hostname = urlsplit(config.base_url).hostname
         with httpx.Client(base_url=config.base_url.rstrip("/") + "/", timeout=15,
                           headers={"Authorization": config.authorization_header},
-                          follow_redirects=False) as client:
+                          follow_redirects=False,
+                          # 本机验收服务不应被系统代理接管；远端地址仍可按
+                          # 企业环境的 HTTP(S)_PROXY 路由。
+                          trust_env=hostname not in {"localhost", "127.0.0.1", "::1"}) as client:
             projects = _get(client, "api/public/projects")["data"]
             ids = [row.get("id") for row in projects if isinstance(row, dict)]
             if project_id:

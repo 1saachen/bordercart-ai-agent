@@ -134,7 +134,10 @@ class FeedbackStore:
             return {'status': 'BLOCKED', 'reason': 'missing_credentials', 'sent': 0}
         rows = self.db.execute("SELECT id,payload FROM score_outbox WHERE status='pending' ORDER BY id").fetchall()
         owned = client is None
-        client = client or httpx.AsyncClient()
+        if client is None:
+            # 本地验收服务不应被开发机的系统代理接管；远端 HTTPS 仍沿用
+            # httpx 的环境代理语义，便于企业网络按需路由。
+            client = httpx.AsyncClient(trust_env=url.hostname not in {'localhost', '127.0.0.1', '::1'})
         sent = 0
         try:
             for identity, payload in rows:

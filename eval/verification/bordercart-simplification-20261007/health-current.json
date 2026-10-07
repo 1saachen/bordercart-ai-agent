@@ -1,0 +1,14 @@
+{
+  "status": "ok",
+  "database": "sqlite",
+  "trade_database": "sqlite",
+  "redis": "disabled",
+  "queue": "disabled",
+  "semantic_cache": false,
+  "model": "deepseek-chat",
+  "runtime": {
+    "app_source_sha256": "78bf13322310c4419b6b71f24e871625923cc08d9a65e7131963e754bfcbcecb"
+  },
+  "endpoint": "http://127.0.0.1:18000/health",
+  "capturedAt": "2026-10-07T17:03:46+08:00"
+}

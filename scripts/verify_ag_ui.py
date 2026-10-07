@@ -219,7 +219,12 @@ async def verify(base_url: str, query: str, timeout: float, minimum_products: in
     error = None
     try:
         async with asyncio.timeout(timeout):
-            async with httpx.AsyncClient(timeout=httpx.Timeout(timeout, connect=10)) as client:
+            parsed_url = httpx.URL(base_url)
+            # 本机验证应绕过系统代理；远端地址继续沿用环境代理配置。
+            trust_env = parsed_url.host not in {"localhost", "127.0.0.1", "::1"}
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(timeout, connect=10), trust_env=trust_env
+            ) as client:
                 async with client.stream("POST", f"{base_url.rstrip('/')}/commerce/ag-ui/run", json=request) as response:
                     response.raise_for_status()
                     if "text/event-stream" not in response.headers.get("content-type", ""):

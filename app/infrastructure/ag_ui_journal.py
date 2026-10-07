@@ -173,8 +173,11 @@ class AGUIJournal:
             messages = [*messages[-99:], {"id": user["id"], "role": "user", "content": user["content"]}]
             body = {**body, "messages": messages, "state": trusted_state}
             projection = {"messages": messages, "state": {}, "openMessages": [], "openTools": []}
+            # 完成校验和 projection 组装后再计算租约，避免 Windows 首次 SQLite
+            # 初始化的耗时吃掉极短测试/故障转移租约。
+            lease_until = time.time() + lease_seconds
             await db.execute("INSERT INTO agui_runs(run_id,session_id,buyer_id,fingerprint,input_json,projection_json,status,owner,lease_until,created_at,updated_at) VALUES(?,?,?,?,?,?,'running',?,?,?,?)",
-                (run_id, session_id, buyer_id, fingerprint, _json(body), _json(projection), owner, now + lease_seconds, now, now))
+                (run_id, session_id, buyer_id, fingerprint, _json(body), _json(projection), owner, lease_until, time.time(), time.time()))
             title = session["title"] if session else str(user["content"])[:48]
             await db.execute("INSERT INTO agui_sessions VALUES(?,?,?,?,?,?,?) ON CONFLICT(session_id) DO UPDATE SET messages_json=excluded.messages_json,state_json=excluded.state_json,last_run_id=excluded.last_run_id,updated_at=excluded.updated_at",
                 (session_id, buyer_id, title, _json(messages), "{}", run_id, now))

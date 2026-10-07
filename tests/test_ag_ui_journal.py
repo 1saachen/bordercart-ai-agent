@@ -239,7 +239,8 @@ async def test_real_tcp_disconnect_and_cursor_reconnect(tmp_path):
         async with asyncio.timeout(3):
             while not server.started:
                 await asyncio.sleep(0.01)
-        async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}", timeout=3) as client:
+        # 回环链路必须直连，不能被开发机的系统 HTTP 代理接管。
+        async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}", timeout=3, trust_env=False) as client:
             last_id = ""
             async with client.stream("POST", "/commerce/ag-ui/run", json=body()) as response:
                 async for line in response.aiter_lines():

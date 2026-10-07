@@ -1,0 +1,9 @@
+命令（串行执行，工作目录 E:\Learning\agent\globex-agent）：
+npm --prefix frontend test -- --run
+
+结果：13 个测试文件通过，128 个测试通过。
+
+命令：
+npm --prefix frontend run build
+
+结果：TypeScript 检查通过，Vite 生产构建通过，607 modules transformed，退出码 0。

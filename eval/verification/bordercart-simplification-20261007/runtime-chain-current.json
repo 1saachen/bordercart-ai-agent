@@ -1,0 +1,42 @@
+{
+  "sourceSha256": "78bf13322310c4419b6b71f24e871625923cc08d9a65e7131963e754bfcbcecb",
+  "api": {
+    "baseUrl": "http://127.0.0.1:18000",
+    "healthStatus": 200,
+    "sqlite": true,
+    "redisDisabled": true,
+    "queueDisabled": true
+  },
+  "productRag": {
+    "endpointStatus": 200,
+    "sessionCreated": true,
+    "productIdCount": 8,
+    "productIds": ["P1003", "P1017", "P1049", "P2072", "P2112", "P2152", "P2160", "P2192"],
+    "landedPriceMentioned": true
+  },
+  "agUi": {
+    "productSearch": {
+      "ok": true,
+      "toolObserved": "product_search_tool",
+      "terminal": "RUN_FINISHED",
+      "productIdCount": 5,
+      "embeddingOnlyStrategyObserved": true
+    },
+    "categoryKnowledge": {
+      "ok": true,
+      "toolObserved": "category_insight_tool",
+      "terminal": "RUN_FINISHED",
+      "eventTypesObserved": ["TOOL_CALL_START", "TOOL_CALL_ARGS", "TOOL_CALL_RESULT", "RUN_FINISHED"]
+    }
+  },
+  "personalSkill": {
+    "createStatus": 200,
+    "listStatus": 200,
+    "deleteStatus": 200,
+    "isolatedRead": true,
+    "deleted": true,
+    "buyerSkillCountBeforeDelete": 1,
+    "contentRecorded": false
+  },
+  "capturedAt": "2026-10-07T17:03:46+08:00"
+}
