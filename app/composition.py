@@ -57,6 +57,7 @@ from app.presentation.ag_ui_runtime import AGUIRuntime
 from app.infrastructure.runtime_version import app_source_fingerprint
 from app.infrastructure.vector.index_bootstrap import bootstrap_product_index
 from app.infrastructure.vector.qdrant_product_index import QdrantProductIndex
+from app.infrastructure.retrieval.reranker import build_reranker
 
 logger = logging.getLogger(__name__)
 
@@ -167,10 +168,11 @@ async def build_container() -> Container:
     # ---- Application ----
     catalog_search = CatalogSearchUseCase(
         product_repo, embedder=embedder, vector_index=vector_index,
-        hybrid_enabled=False,
-        hybrid_lexical_weight=1.0,
-        hybrid_vector_weight=1.0,
+        hybrid_enabled=settings.hybrid_recall_enabled,
+        hybrid_lexical_weight=settings.hybrid_lexical_weight,
+        hybrid_vector_weight=settings.hybrid_vector_weight,
         recall_candidates=settings.recall_candidates,
+        reranker=build_reranker(settings),
     )
     place_order = PlaceOrderUseCase(confirmations)
     query_order = QueryOrderUseCase(trade_store)

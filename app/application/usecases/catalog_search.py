@@ -1,15 +1,16 @@
 # -*- coding: utf-8 -*-
 """CatalogSearchUseCase
 
-商品检索核心 UseCase，对齐参考实现五步流程：
-    1. EmbeddingClient 把 normalized_query 向量化
-    2. ProductVectorIndex.search(top_n) 拿候选 product_id（Qdrant，COSINE）
-    3. ProductRepository.find_by_ids 还原 Product 聚合
-    4. 按向量分稳定排序并应用结构化硬约束
+商品检索核心 UseCase：
+    1. 默认运行时开启 BM25 与 Qdrant 向量双路召回
+    2. 从权威目录还原商品，按价格、库存、配送与材质等条件过滤
+    3. RRF 融合并按 canonical_product_id 去重
+    4. 已配置的 Reranker 对有界候选精排，然后截取 Top-K
     5. 组装商品卡 JSON；命中 ship_to 时内联到手价（小计+运费+关税，统一目标币种）
 
 降级链（recall_strategy 如实标注）：
-    embedding_only → keyword_2gram（embedding 服务异常时兜底）
+    Hybrid：hybrid_rerank → hybrid_rrf（精排失败或未配置）；向量失败时使用 BM25。
+    关闭 Hybrid：embedding_only → keyword_2gram；已配置的 Reranker 仍可精排。
 
 计价收敛设计：到手价在检索链路内联计算（TariffSchedule 规则内核），
 不给 Agent 单独暴露比价/运费工具，减少不必要的工具调用轮次。
@@ -22,6 +23,7 @@ from __future__ import annotations
 import logging
 import asyncio
 import re
+import math
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -30,6 +32,7 @@ from app.domain.catalog.ports.product_repository import ProductRepository
 from app.domain.catalog.ports.retrieval_ports import (
     EmbeddingClient,
     ProductVectorIndex,
+    Reranker,
 )
 from app.domain.catalog.product import Product
 from app.domain.catalog.product_search_spec import ProductSearchSpec
@@ -141,6 +144,7 @@ class CatalogSearchUseCase:
         hybrid_vector_weight: float = 1.0,
         recall_candidates: int = 32,
         capture_retrieval_stages: bool = False,
+        reranker: Reranker | None = None,
     ) -> None:
         # 仅评测主动开启；记录混合检索的实际阶段，不改变排序或向模型增加字段。
         self._capture_retrieval_stages = capture_retrieval_stages
@@ -150,6 +154,7 @@ class CatalogSearchUseCase:
         if type(recall_candidates) is not int or not 8 <= recall_candidates <= 256:
             raise ValueError("recall_candidates 须为 8 到 256 的整数")
         self._recall_candidates = recall_candidates
+        self._reranker = reranker
         self._product_repo = product_repo
         self._embedder = embedder
         self._vector_index = vector_index
@@ -161,7 +166,9 @@ class CatalogSearchUseCase:
         exact_id = spec.sku_id or spec.product_id
         identifiers = [exact_id] if exact_id else list(dict.fromkeys(re.findall(r"(?<![A-Za-z0-9])P\d{4,}(?:-S\d+)?(?![A-Za-z0-9-])", spec.normalized_query.upper())))
         if identifiers:
-            return await self._execute_exact_ids(spec, identifiers)
+            result = await self._execute_exact_ids(spec, identifiers)
+            result.update(rerank_applied=False, rerank_status="not_applicable")
+            return result
         if self._hybrid_enabled:
             return await self._execute_hybrid(spec)
         scored: list[tuple[float, Product]] = []
@@ -189,11 +196,16 @@ class CatalogSearchUseCase:
             elif len(filtered_out) < _FILTERED_OUT_LIMIT:
                 filtered_out.append(self._to_rejected(product, spec, reason))
 
+        total_candidates = len(filtered)
+        filtered, rerank_status = await self._rerank(spec, filtered)
+        applied = rerank_status == "applied"
         hits = [self._to_card(score, product, spec) for score, product in filtered[: spec.top_k]]
         result = {
             "hits": [card.to_dict() for card in hits],
-            "total_candidates": len(filtered),
-            "recall_strategy": recall_strategy,
+            "total_candidates": total_candidates,
+            "recall_strategy": recall_strategy + "_rerank" if applied else recall_strategy,
+            "rerank_applied": applied,
+            "rerank_status": rerank_status,
         }
         if filtered_out:
             # 如实告知"召回到了但被硬约束挡掉"，否则模型分不清"库里没有"与"被过滤"，
@@ -289,21 +301,47 @@ class CatalogSearchUseCase:
                     if weight > 0 for _, p in ranking)),
                 "fused_candidates": [p.product_id for _, p in scored],
             }
-        strategy = "hybrid_only" if vector_hits is not None else "bm25"
+        strategy = "hybrid_rrf" if vector_hits is not None else "bm25"
         deduped, seen = [], set()
         for score, product in scored:
             key = product.canonical_product_id or product.product_id
             if key not in seen:
                 seen.add(key)
                 deduped.append((score, product))
+        total_candidates = len(deduped)
+        deduped, rerank_status = await self._rerank(spec, deduped)
+        applied = rerank_status == "applied"
+        if applied:
+            strategy = "hybrid_rerank" if vector_hits is not None else "bm25_rerank"
         result = {"hits": [self._to_card(score, p, spec).to_dict() for score, p in deduped[:spec.top_k]],
-                "total_candidates": len(deduped), "recall_strategy": strategy,
+                "total_candidates": total_candidates, "recall_strategy": strategy,
                 "retrieval_variant": "bm25_vector_rrf_v1", "vector_available": vector_hits is not None,
-                "filtered_out": rejected, "retrieval_diagnostics": diagnostics}
+                "filtered_out": rejected, "retrieval_diagnostics": diagnostics,
+                "rerank_applied": applied, "rerank_status": rerank_status}
         if stages is not None:
             stages["ranked_candidates"] = [p.product_id for _, p in deduped]
             result["retrieval_stages"] = stages
         return result
+
+    async def _rerank(self, spec, candidates):
+        """过滤与去重之后精排；候选/正文有界，任何不完整结果保留原顺序。"""
+        if not candidates:
+            return candidates, "no_candidates"
+        if self._reranker is None:
+            return candidates, "not_configured"
+        window = min(256, max(self._recall_candidates, spec.top_k * 4))
+        head = candidates[:window]
+        try:
+            scores = await self._reranker.rerank(spec.normalized_query, [p.searchable_text()[:4000] for _, p in head])
+            if (len(scores) != len(head) or any(isinstance(s, bool) or not isinstance(s, (int, float))
+                                               or not math.isfinite(s) for s in scores)):
+                raise ValueError("精排分数数量或值无效")
+            # 同分保留 RRF 顺序；尾部未精排候选不与精排分数混排。
+            ranked = sorted(zip(scores, [p for _, p in head]), key=lambda pair: -pair[0])
+            return ranked, "applied"
+        except Exception as err:
+            logger.warning("商品精排失败，保留召回排名：%s", type(err).__name__)
+            return candidates, "degraded"
 
     def _reject_reason(self, product: Product, spec: ProductSearchSpec, primary=None) -> Optional[str]:
         """返回硬约束拒绝原因，None 表示通过。"""

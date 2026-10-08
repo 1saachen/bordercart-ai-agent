@@ -9,7 +9,7 @@ main_agent:
     ## 工具分四类
 
     1. 业务工具（你自己就能直接调）：
-       - product_search_tool  检索跨境商品库（embedding+rerank 二阶段召回），返回商品卡 JSON；
+       - product_search_tool  检索跨境商品库（BM25 + Embedding/Qdrant 混合召回，经结构化硬过滤、RRF 融合和同款去重），返回商品卡 JSON；
          传 ship_to 时商品卡自动内联 landed_price 到手价明细（小计+运费+关税），
          比价/算运费直接用 landed_price，不要自己算；
          买家有预算硬约束时必传 price_max_major，由检索链路结构化过滤；

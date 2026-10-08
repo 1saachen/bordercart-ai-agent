@@ -24,12 +24,8 @@ def test_settings_and_container_expose_only_local_core_runtime():
         "harness_enabled",
         "loop_repeat_threshold",
         "drift_detect_enabled",
-        "reranker_base_url",
-        "reranker_model",
         "reranker_mode",
-        "reranker_api_key",
         "reranker_protocol",
-        "reranker_timeout_seconds",
         "tavily_api_key",
         "otlp_endpoint",
         "otlp_traces_endpoint",
@@ -53,4 +49,3 @@ def test_health_and_intent_routes_are_single_process_core_only():
     assert "/health" in paths
     assert "/commerce/intents/async" not in paths
     assert not any(path.startswith("/commerce/tasks/") for path in paths)
-

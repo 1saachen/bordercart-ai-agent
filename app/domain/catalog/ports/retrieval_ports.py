@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Protocol
 
 from app.domain.catalog.product import Product
 
@@ -45,6 +46,15 @@ class ProductVectorIndex(ABC):
 
     @abstractmethod
     async def search(self, embedding: list[float], top_n: int) -> list[VectorHit]:
+        ...
+
+
+class Reranker(Protocol):
+    """商品候选精排端口：返回与 documents 一一对应的有限相关性分数。"""
+
+    configured: bool
+
+    async def rerank(self, query: str, documents: list[str]) -> list[float]:
         ...
 
 

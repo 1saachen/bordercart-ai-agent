@@ -82,6 +82,13 @@ class Settings:
     identity_hmac_secret: str = field(default="", repr=False)
     recall_candidates: int = 32
     embedding_version: str = ""  # 同名模型更新权重或编码方式时，用版本区分已存向量
+    hybrid_recall_enabled: bool = True
+    hybrid_lexical_weight: float = 1.0
+    hybrid_vector_weight: float = 1.0
+    reranker_base_url: str = ""
+    reranker_api_key: str = field(default="", repr=False)
+    reranker_model: str = ""
+    reranker_timeout_seconds: float = 8.0
 
 
 def load_settings() -> Settings:
@@ -154,4 +161,11 @@ def load_settings() -> Settings:
         session_owner_binding=os.getenv("SESSION_OWNER_BINDING", "1") not in ("0", "false", "False"),
         identity_mode=os.getenv("IDENTITY_MODE", "demo"),
         identity_hmac_secret=os.getenv("IDENTITY_HMAC_SECRET", ""),
+        hybrid_recall_enabled=os.getenv("HYBRID_RECALL_ENABLED", "1") not in ("0", "false", "False"),
+        hybrid_lexical_weight=float(os.getenv("HYBRID_LEXICAL_WEIGHT", "1")),
+        hybrid_vector_weight=float(os.getenv("HYBRID_VECTOR_WEIGHT", "1")),
+        reranker_base_url=os.getenv("RERANKER_BASE_URL", ""),
+        reranker_api_key=os.getenv("RERANKER_API_KEY", ""),
+        reranker_model=os.getenv("RERANKER_MODEL", ""),
+        reranker_timeout_seconds=float(os.getenv("RERANKER_TIMEOUT_SECONDS", "8")),
     )
